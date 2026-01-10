@@ -1,0 +1,42 @@
+# Core dependencies
+flask==3.0.0
+flask-cors==4.0.0
+python-dotenv==1.0.0
+
+# YouTube downloading
+yt-dlp==2024.1.1
+
+# Audio processing
+pydub==0.25.1
+librosa==0.10.1
+soundfile==0.12.1
+scipy==1.11.4
+
+# AI/ML dependencies
+torch>=2.0.0
+torchaudio>=2.0.0
+transformers==4.36.2
+accelerate==0.25.0
+
+# Whisper for transcription
+openai-whisper==20231117
+
+# Lyrics scraping
+lyricsgenius==3.0.1
+beautifulsoup4==4.12.2
+requests==2.31.0
+
+# Music generation (AudioCraft/MusicGen)
+audiocraft==1.2.0
+
+# Utilities
+numpy==1.26.2
+tqdm==4.66.1
+pyyaml==6.0.1
+aiofiles==23.2.1
+
+# Text processing
+difflib-match==0.1.0
+fuzzywuzzy==0.18.0
+python-Levenshtein==0.23.0
+

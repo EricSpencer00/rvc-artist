@@ -1,0 +1,8 @@
+{
+  "name": "rvc-artist",
+  "version": "1.0.0",
+  "description": "AI-powered music generation tool for creating songs in an artist's style",
+  "scripts": {
+    "start": "python app.py"
+  }
+}
