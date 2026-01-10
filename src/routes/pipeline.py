@@ -12,7 +12,7 @@ from datetime import datetime
 pipeline_bp = Blueprint('pipeline', __name__)
 
 # Get project root
-ROOT_DIR = Path(__file__).parent.parent.parent.parent
+ROOT_DIR = Path(__file__).parent.parent.parent
 
 # Pipeline state
 pipeline_state = {
@@ -117,6 +117,7 @@ def start_transcription():
             transcriber = AudioTranscriber()
             audio_dir = ROOT_DIR / "data" / "audio" / "raw"
             output_dir = ROOT_DIR / "data" / "transcripts"
+            output_dir.mkdir(parents=True, exist_ok=True)
             
             audio_files = list(audio_dir.glob("*.[mw][pa][3v]")) + \
                          list(audio_dir.glob("*.m4a")) + \
@@ -177,6 +178,7 @@ def start_lyrics_scraping():
             scraper = LyricsScraper(token)
             audio_dir = ROOT_DIR / "data" / "audio" / "raw"
             output_dir = ROOT_DIR / "data" / "lyrics"
+            output_dir.mkdir(parents=True, exist_ok=True)
             
             # Get song names from downloaded files
             audio_files = list(audio_dir.glob("*.[mw][pa][3v]")) + \
@@ -242,6 +244,7 @@ def start_alignment():
             transcripts_dir = ROOT_DIR / "data" / "transcripts"
             lyrics_dir = ROOT_DIR / "data" / "lyrics"
             output_dir = ROOT_DIR / "data" / "aligned"
+            output_dir.mkdir(parents=True, exist_ok=True)
             
             transcript_files = list(transcripts_dir.glob("*.json"))
             total = len(transcript_files)
@@ -301,6 +304,7 @@ def start_analysis():
             analyzer = StyleAnalyzer()
             audio_dir = ROOT_DIR / "data" / "audio" / "raw"
             output_dir = ROOT_DIR / "data" / "features"
+            output_dir.mkdir(parents=True, exist_ok=True)
             
             audio_files = list(audio_dir.glob("*.[mw][pa][3v]")) + \
                          list(audio_dir.glob("*.m4a")) + \
@@ -368,6 +372,7 @@ def start_generation():
             generator = MusicGenerator()
             features_dir = ROOT_DIR / "data" / "features"
             output_dir = ROOT_DIR / "output" / "generated"
+            output_dir.mkdir(parents=True, exist_ok=True)
             
             # Load style profile if available
             style_profile_path = features_dir / "style_profile.json"
@@ -457,6 +462,9 @@ def run_full_pipeline():
             audio_dir = ROOT_DIR / "data" / "audio" / "raw"
             output_dir = ROOT_DIR / "data" / "transcripts"
             
+            # Ensure output directory exists
+            output_dir.mkdir(parents=True, exist_ok=True)
+            
             audio_files = list(audio_dir.glob("*.mp3")) + list(audio_dir.glob("*.wav")) + \
                          list(audio_dir.glob("*.m4a")) + list(audio_dir.glob("*.webm"))
             
@@ -476,6 +484,7 @@ def run_full_pipeline():
             if token and token != 'your_genius_api_token_here':
                 scraper = LyricsScraper(token)
                 lyrics_dir = ROOT_DIR / "data" / "lyrics"
+                lyrics_dir.mkdir(parents=True, exist_ok=True)
                 
                 for audio_file in audio_files:
                     song_title = audio_file.stem.split(' - ')[-1].split('(')[0].strip()
@@ -496,6 +505,7 @@ def run_full_pipeline():
             transcripts_dir = ROOT_DIR / "data" / "transcripts"
             lyrics_dir = ROOT_DIR / "data" / "lyrics"
             aligned_dir = ROOT_DIR / "data" / "aligned"
+            aligned_dir.mkdir(parents=True, exist_ok=True)
             
             for transcript_file in transcripts_dir.glob("*.json"):
                 lyrics_file = lyrics_dir / transcript_file.name
@@ -517,6 +527,7 @@ def run_full_pipeline():
             
             analyzer = StyleAnalyzer()
             features_dir = ROOT_DIR / "data" / "features"
+            features_dir.mkdir(parents=True, exist_ok=True)
             
             all_features = []
             for audio_file in audio_files:

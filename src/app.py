@@ -10,8 +10,8 @@ from pathlib import Path
 def create_app():
     """Create and configure the Flask application."""
     
-    # Get the project root directory
-    root_dir = Path(__file__).parent.parent.parent
+    # Get the project root directory (src/app.py -> src -> rvc-artist)
+    root_dir = Path(__file__).parent.parent
     template_dir = root_dir / "frontend" / "templates"
     static_dir = root_dir / "frontend" / "static"
     
