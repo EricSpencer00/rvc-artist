@@ -83,6 +83,14 @@ class LyricsScraper:
             
             return results
             
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 401:
+                print(f"Error searching Genius: 401 Unauthorized - Invalid or missing API token")
+                print("Please set a valid GENIUS_API_TOKEN in your .env file")
+                print("Get your token at: https://genius.com/api-clients")
+            else:
+                print(f"Error searching Genius: {e}")
+            return []
         except Exception as e:
             print(f"Error searching Genius: {e}")
             return []

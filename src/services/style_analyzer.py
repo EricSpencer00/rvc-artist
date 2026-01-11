@@ -35,55 +35,72 @@ class StyleAnalyzer:
         if not HAS_LIBROSA:
             print("⚠️  librosa not installed. Install scipy and librosa for full audio analysis.")
     
-    def analyze(self, audio_path: str) -> Dict[str, Any]:
+    def load_audio(self, audio_path: str) -> np.ndarray:
         """
-        Perform complete analysis on an audio file.
-        Provides fallback if librosa unavailable.
+        Load audio file.
         
         Args:
             audio_path: Path to audio file
             
         Returns:
-            Dictionary with all features
+            Audio time series
         """
-        print(f"Analyzing: {Path(audio_path).name}")
+        if not HAS_LIBROSA:
+            raise RuntimeError("librosa not available")
         
-        # Return mock data for now (librosa not available in Python 3.14)
-        return {
-            'audio_file': Path(audio_path).name,
-            'tempo': {'tempo': 120.0, 'num_beats': 32, 'beat_times': [], 'tempo_confidence': 'medium'},
-            'key': {'key': 'C', 'mode': 'major', 'full_key': 'C major', 'chroma_vector': [0.1] * 12},
-            'energy': {'rms_mean': 0.1, 'rms_std': 0.05, 'rms_max': 0.2, 'zcr_mean': 0.1, 'zcr_std': 0.05, 'dynamic_range': 0.15},
-            'spectral': {'spectral_centroid_mean': 2000.0, 'spectral_centroid_std': 500.0, 'spectral_rolloff_mean': 4000.0, 'spectral_bandwidth_mean': 1000.0, 'spectral_contrast_mean': [1.0] * 7, 'mfcc_mean': [0.0] * 13, 'mfcc_std': [0.1] * 13},
-            'rhythm': {'onset_strength_mean': 0.1, 'onset_strength_std': 0.05, 'rhythmic_complexity': 0.1},
-            'structure': {'duration': 180.0, 'num_sections': 4, 'section_boundaries': []}
-        }
+        y, sr = librosa.load(audio_path, sr=self.sample_rate, mono=True)
+        return y
     
-    def create_style_profile(self, all_features: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def analyze_tempo(self, y: np.ndarray) -> Dict[str, Any]:
         """
-        Create an aggregated style profile from multiple song analyses.
+        Analyze tempo and beats.
         
         Args:
-            all_features: List of feature dictionaries from analyze()
+            y: Audio time series
             
         Returns:
-            Aggregated style profile
+            Dictionary with tempo information
         """
-        valid_features = [f for f in all_features if 'error' not in f]
+        # Estimate tempo
+        tempo, beats = librosa.beat.beat_track(y=y, sr=self.sample_rate)
+        beat_times = librosa.frames_to_time(beats, sr=self.sample_rate)
         
-        if not valid_features:
-            return {'error': 'No valid analyses to aggregate'}
+        # Tempo confidence estimation (simplified)
+        if len(beats) > 10:
+            confidence = 'high'
+        elif len(beats) > 5:
+            confidence = 'medium'
+        else:
+            confidence = 'low'
         
         return {
-            'num_songs_analyzed': len(valid_features),
-            'tempo': {'mean': 120.0, 'std': 20.0, 'min': 80.0, 'max': 160.0, 'median': 120.0},
-            'key': {'most_common': 'C major', 'distribution': {'C major': len(valid_features)}},
-            'energy': {'rms_mean': 0.1, 'rms_std': 0.05, 'dynamic_range_mean': 0.15},
-            'spectral': {'brightness_mean': 2000.0, 'brightness_std': 500.0},
-            'structure': {'avg_duration': 180.0, 'duration_std': 30.0},
-            'characteristics': {'tempo': 'moderate', 'energy': 'moderate energy', 'timbre': 'balanced', 'overall': 'moderate, moderate energy, balanced sound'}
+            'tempo': float(tempo),
+            'num_beats': int(len(beats)),
+            'beat_times': beat_times.tolist()[:50] if len(beat_times) < 50 else [],  # Limit size
+            'tempo_confidence': confidence
         }
-
+    
+    def analyze_key(self, y: np.ndarray) -> Dict[str, Any]:
+        """
+        Analyze musical key using chroma features.
+        
+        Args:
+            y: Audio time series
+            
+        Returns:
+            Dictionary with key information
+        """
+        # Compute chroma features
+        chroma = librosa.feature.chroma_cqt(y=y, sr=self.sample_rate)
+        chroma_avg = np.mean(chroma, axis=1)
+        
+        # Map chroma to note names
+        note_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+        dominant_pitch = int(np.argmax(chroma_avg))
+        estimated_key = note_names[dominant_pitch]
+        
+        # Estimate major vs minor (simplified heuristic)
+        major_third = (dominant_pitch + 4) % 12
         minor_third = (dominant_pitch + 3) % 12
         
         mode = 'major' if chroma_avg[major_third] > chroma_avg[minor_third] else 'minor'
@@ -94,6 +111,55 @@ class StyleAnalyzer:
             'full_key': f"{estimated_key} {mode}",
             'chroma_vector': chroma_avg.tolist()
         }
+    
+    def analyze(self, audio_path: str) -> Dict[str, Any]:
+        """
+        Perform complete analysis on an audio file.
+        
+        Args:
+            audio_path: Path to audio file
+            
+        Returns:
+            Dictionary with all features
+        """
+        print(f"Analyzing: {Path(audio_path).name}")
+        
+        if not HAS_LIBROSA:
+            print("⚠️  librosa not installed, returning mock data")
+            return {
+                'audio_file': Path(audio_path).name,
+                'tempo': {'tempo': 120.0, 'num_beats': 32, 'beat_times': [], 'tempo_confidence': 'medium'},
+                'key': {'key': 'C', 'mode': 'major', 'full_key': 'C major', 'chroma_vector': [0.1] * 12},
+                'energy': {'rms_mean': 0.1, 'rms_std': 0.05, 'rms_max': 0.2, 'zcr_mean': 0.1, 'zcr_std': 0.05, 'dynamic_range': 0.15},
+                'spectral': {'spectral_centroid_mean': 2000.0, 'spectral_centroid_std': 500.0, 'spectral_rolloff_mean': 4000.0, 'spectral_bandwidth_mean': 1000.0, 'spectral_contrast_mean': [1.0] * 7, 'mfcc_mean': [0.0] * 13, 'mfcc_std': [0.1] * 13},
+                'rhythm': {'onset_strength_mean': 0.1, 'onset_strength_std': 0.05, 'rhythmic_complexity': 0.1},
+                'structure': {'duration': 180.0, 'num_sections': 4, 'section_boundaries': []}
+            }
+        
+        try:
+            # Load audio
+            y = self.load_audio(audio_path)
+            
+            # Perform all analyses
+            features = {
+                'audio_file': Path(audio_path).name,
+                'tempo': self.analyze_tempo(y),
+                'key': self.analyze_key(y),
+                'energy': self.analyze_energy(y),
+                'spectral': self.analyze_spectral(y),
+                'rhythm': self.analyze_rhythm(y),
+                'structure': self.analyze_structure(y)
+            }
+            
+            print(f"✅ Analysis complete for {Path(audio_path).name}")
+            return features
+            
+        except Exception as e:
+            print(f"❌ Error analyzing {audio_path}: {e}")
+            return {
+                'audio_file': Path(audio_path).name,
+                'error': str(e)
+            }
     
     def analyze_energy(self, y: np.ndarray) -> Dict[str, Any]:
         """
@@ -177,6 +243,7 @@ class StyleAnalyzer:
             'rhythmic_complexity': float(np.std(tempogram))
         }
     
+    
     def analyze_structure(self, y: np.ndarray) -> Dict[str, Any]:
         """
         Analyze song structure.
@@ -212,43 +279,6 @@ class StyleAnalyzer:
             'num_sections': int(num_sections),
             'section_boundaries': boundary_times.tolist() if len(boundary_times) < 20 else []
         }
-    
-    def analyze(self, audio_path: str) -> Dict[str, Any]:
-        """
-        Perform complete analysis on an audio file.
-        
-        Args:
-            audio_path: Path to audio file
-            
-        Returns:
-            Dictionary with all features
-        """
-        print(f"Analyzing: {Path(audio_path).name}")
-        
-        try:
-            # Load audio
-            y = self.load_audio(audio_path)
-            
-            # Perform all analyses
-            features = {
-                'audio_file': Path(audio_path).name,
-                'tempo': self.analyze_tempo(y),
-                'key': self.analyze_key(y),
-                'energy': self.analyze_energy(y),
-                'spectral': self.analyze_spectral(y),
-                'rhythm': self.analyze_rhythm(y),
-                'structure': self.analyze_structure(y)
-            }
-            
-            print(f"Analysis complete for {Path(audio_path).name}")
-            return features
-            
-        except Exception as e:
-            print(f"Error analyzing {audio_path}: {e}")
-            return {
-                'audio_file': Path(audio_path).name,
-                'error': str(e)
-            }
     
     def create_style_profile(self, all_features: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
