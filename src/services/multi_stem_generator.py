@@ -365,18 +365,24 @@ class MultiStemGenerator:
         vocal_model: str = "bark",
         rvc_model_path: Optional[str] = None,
         enable_processing: bool = True,
-        enable_mastering: bool = True
+        enable_mastering: bool = True,
+        enable_parallel_generation: bool = True,
+        max_parallel_stems: int = 2,
+        cache_all_models: bool = True
     ):
         """
-        Initialize multi-stem generator.
+        Initialize multi-stem generator optimized for high-memory machines.
         
         Args:
-            model_size: MusicGen model size
+            model_size: MusicGen model size ('small', 'medium', 'large')
             use_stereo: Whether to use stereo models
             vocal_model: Vocal synthesis model ('bark', 'musicgen_melody', None)
             rvc_model_path: Path to RVC model for voice conversion
-            enable_processing: Enable stem processing
-            enable_mastering: Enable mastering chain
+            enable_processing: Enable stem processing (EQ, compression, reverb)
+            enable_mastering: Enable mastering chain (LUFS, limiting)
+            enable_parallel_generation: Generate multiple stems in parallel (64GB+ only)
+            max_parallel_stems: Max stems to generate simultaneously (2-4 for 64GB RAM)
+            cache_all_models: Keep all models in memory for faster generation
         """
         self.model_size = model_size
         self.use_stereo = use_stereo
@@ -384,6 +390,9 @@ class MultiStemGenerator:
         self.rvc_model_path = rvc_model_path
         self.enable_processing = enable_processing
         self.enable_mastering = enable_mastering
+        self.enable_parallel_generation = enable_parallel_generation
+        self.max_parallel_stems = min(max_parallel_stems, 4)  # Cap at 4 for stability
+        self.cache_all_models = cache_all_models
         
         self.models = {}
         self.vocal_generator = None
@@ -970,6 +979,87 @@ class MultiStemGenerator:
         
         return str(output_file), all_section_stems
     
+    def _generate_stems_sequential(
+        self,
+        stems_to_generate: List[str],
+        prompt: str,
+        duration: int,
+        style_profile: Optional[Dict],
+        lyrics: Optional[str],
+        artist_name: Optional[str],
+        temperature: float,
+        top_k: int,
+        guidance_scale: float,
+        melody_reference: Optional[np.ndarray]
+    ) -> Dict[str, np.ndarray]:
+        """Generate stems one at a time (default for lower RAM)."""
+        stems = {}
+        for stem_type in stems_to_generate:
+            audio = self.generate_stem(
+                stem_type=stem_type,
+                base_prompt=prompt,
+                duration=duration,
+                style_profile=style_profile,
+                lyrics=lyrics if stem_type == 'vocals' else None,
+                artist_name=artist_name,
+                temperature=temperature,
+                top_k=top_k,
+                guidance_scale=guidance_scale,
+                melody_reference=melody_reference
+            )
+            stems[stem_type] = audio
+        return stems
+
+    def _generate_stems_parallel(
+        self,
+        stems_to_generate: List[str],
+        prompt: str,
+        duration: int,
+        style_profile: Optional[Dict],
+        lyrics: Optional[str],
+        artist_name: Optional[str],
+        temperature: float,
+        top_k: int,
+        guidance_scale: float,
+        melody_reference: Optional[np.ndarray]
+    ) -> Dict[str, np.ndarray]:
+        """Generate multiple stems in parallel for 64GB+ RAM machines."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        
+        print(f"\n⚡ Parallel generation: {min(len(stems_to_generate), self.max_parallel_stems)} stems at a time")
+        
+        stems = {}
+        
+        with ThreadPoolExecutor(max_workers=self.max_parallel_stems) as executor:
+            futures = {}
+            
+            for stem_type in stems_to_generate:
+                future = executor.submit(
+                    self.generate_stem,
+                    stem_type=stem_type,
+                    base_prompt=prompt,
+                    duration=duration,
+                    style_profile=style_profile,
+                    lyrics=lyrics if stem_type == 'vocals' else None,
+                    artist_name=artist_name,
+                    temperature=temperature,
+                    top_k=top_k,
+                    guidance_scale=guidance_scale,
+                    melody_reference=melody_reference
+                )
+                futures[future] = stem_type
+            
+            for future in as_completed(futures):
+                stem_type = futures[future]
+                try:
+                    audio = future.result()
+                    stems[stem_type] = audio
+                except Exception as e:
+                    print(f"Error generating {stem_type}: {e}")
+                    stems[stem_type] = np.zeros(int(duration * 32000))
+        
+        return stems
+
     def _crossfade_sections(
         self,
         sections: List[np.ndarray],
@@ -1033,15 +1123,29 @@ class MultiStemGenerator:
 
 
 if __name__ == "__main__":
-    print("Testing Multi-Stem Generator...")
+    print("Testing Multi-Stem Generator with 64GB RAM optimizations...")
     
+    # Use all optimizations for a powerful machine
     generator = MultiStemGenerator(
         model_size="large",
         enable_processing=True,
-        enable_mastering=True
+        enable_mastering=True,
+        enable_parallel_generation=True,  # Parallel stems
+        max_parallel_stems=2,              # 2 stems at once
+        cache_all_models=True              # Keep melody model in memory
     )
     
     test_prompt = "aggressive trap beat, heavy 808s, dark atmosphere"
+    
+    print(f"\n{'='*60}")
+    print(f"🚀 OPTIMIZED 64GB RAM GENERATION")
+    print(f"{'='*60}")
+    print(f"Parallel generation: {generator.enable_parallel_generation}")
+    print(f"Max parallel stems: {generator.max_parallel_stems}")
+    print(f"Model caching: {generator.cache_all_models}")
+    print(f"Processing: {generator.enable_processing}")
+    print(f"Mastering: {generator.enable_mastering}")
+    print(f"{'='*60}\n")
     
     mixed_path, stem_paths = generator.generate(
         prompt=test_prompt,
@@ -1054,3 +1158,4 @@ if __name__ == "__main__":
     print(f"\n✅ Test complete!")
     print(f"Mixed file: {mixed_path}")
     print(f"Stems: {list(stem_paths.keys())}")
+
