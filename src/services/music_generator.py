@@ -25,7 +25,15 @@ class MusicGenerator:
         """
         self.model_size = model_size
         self.model = None
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        
+        # Determine best available device
+        if torch.cuda.is_available():
+            self.device = "cuda"
+        elif torch.backends.mps.is_available():
+            self.device = "mps"
+        else:
+            self.device = "cpu"
+            
         self._load_model()
     
     def _load_model(self):
@@ -33,7 +41,15 @@ class MusicGenerator:
         try:
             from audiocraft.models import MusicGen
             print(f"Loading MusicGen model: {self.model_size} on {self.device}")
-            self.model = MusicGen.get_pretrained(self.model_size, device=self.device)
+            
+            # Load on CPU first to avoid autocast issues during initialization on MPS
+            if self.device == "mps":
+                self.model = MusicGen.get_pretrained(self.model_size, device="cpu")
+                print("Moving model to MPS...")
+                self.model.to("mps")
+            else:
+                self.model = MusicGen.get_pretrained(self.model_size, device=self.device)
+                
             print("MusicGen model loaded successfully")
         except ImportError:
             print("AudioCraft not available. Install with: pip install audiocraft")
@@ -134,10 +150,11 @@ class MusicGenerator:
             Path to generated audio file
         """
         # Build the prompt first
-        if not prompt and style_profile:
-            prompt = self.style_to_prompt(style_profile, artist_name=artist_name)
-        elif not prompt:
-            prompt = f"{artist_name} style" if artist_name else "pop music"
+        if not prompt:
+            if style_profile:
+                prompt = self.style_to_prompt(style_profile, artist_name=artist_name)
+            else:
+                prompt = f"{artist_name} style" if artist_name else "pop music"
         
         print(f"--- ENHANCED PROMPT: {prompt} ---")
 
@@ -147,14 +164,6 @@ class MusicGenerator:
         # Create output directory
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
-        
-        # Build the prompt
-        if not prompt and style_profile:
-            prompt = self.style_to_prompt(style_profile, artist_name=artist_name)
-        elif not prompt:
-            prompt = f"{artist_name} style" if artist_name else "pop music"
-        
-        print(f"--- ENHANCED PROMPT: {prompt} ---")
         
         print(f"Generating music with prompt: '{prompt}'")
         print(f"Duration: {duration} seconds")
@@ -171,7 +180,25 @@ class MusicGenerator:
             
             # Generate
             descriptions = [prompt]
-            wav = self.model.generate(descriptions, progress=True)
+            
+            # On MPS, we sometimes need to disable autocast to avoid "device_type" errors
+            if self.device == "mps":
+                import contextlib
+                # Create a fake autocast to bypass internal ones if they fail
+                # or just use a nullcontext if the user is on an older torch version
+                try:
+                    wav = self.model.generate(descriptions, progress=True)
+                except Exception as e:
+                    if "autocast" in str(e).lower():
+                        print("MPS Autocast error detected, trying with CPU fallback for generation step...")
+                        # Move to CPU for generation call if MPS fails specifically due to autocast
+                        self.model.to("cpu")
+                        wav = self.model.generate(descriptions, progress=True)
+                        self.model.to("mps")
+                    else:
+                        raise e
+            else:
+                wav = self.model.generate(descriptions, progress=True)
             
             # Save the audio
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
