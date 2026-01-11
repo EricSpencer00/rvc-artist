@@ -42,25 +42,42 @@ class MusicGenerator:
             print(f"Error loading MusicGen model: {e}")
             self.model = None
     
-    def style_to_prompt(self, style_profile: Optional[Dict[str, Any]] = None) -> str:
+    def style_to_prompt(self, style_profile: Optional[Dict[str, Any]] = None, artist_name: Optional[str] = None) -> str:
         """
         Convert a style profile to a text prompt for MusicGen.
         
         Args:
             style_profile: Style profile from StyleAnalyzer
+            artist_name: Optional name of the artist to mimic
             
         Returns:
             Text prompt describing the musical style
         """
         if not style_profile or not style_profile.get('characteristics'):
+            if artist_name:
+                return f"{artist_name} style music"
             return "pop music"
         
         chars = style_profile.get('characteristics', {})
         tempo = style_profile.get('tempo', {})
         key_info = style_profile.get('key', {})
+        lyrics_info = style_profile.get('lyrics', {})
         
         # Build descriptive prompt
         prompt_parts = []
+        
+        # Add artist context if known
+        if artist_name:
+            prompt_parts.append(f"in the style of {artist_name}")
+            
+            # Special artist-specific enhancers
+            artist_lower = artist_name.lower()
+            if 'yeat' in artist_lower:
+                prompt_parts.extend(["aggressive trap beat", "heavy distorted 808", "synthetic bells", "rage trap"])
+            elif 'playboi carti' in artist_lower or 'carti' in artist_lower:
+                prompt_parts.extend(["minimalist trap", "high pitched synths", "vampire aesthetic", "f1lthy style"])
+            elif 'travis scott' in artist_lower:
+                prompt_parts.extend(["psychedelic trap", "dark atmospheric", "heavy reverb", "distorted vocals"])
         
         # Add overall characteristics
         if chars.get('overall'):
@@ -68,21 +85,22 @@ class MusicGenerator:
         
         # Add tempo info
         tempo_mean = tempo.get('mean', 120)
-        if tempo_mean < 90:
-            prompt_parts.append("slow tempo")
-        elif tempo_mean > 140:
-            prompt_parts.append("fast tempo")
+        prompt_parts.append(f"{int(tempo_mean)} BPM")
         
         # Add key if available
         most_common_key = key_info.get('most_common', '')
-        if most_common_key and 'minor' in most_common_key:
-            prompt_parts.append("minor key")
-        elif most_common_key and 'major' in most_common_key:
-            prompt_parts.append("major key")
+        if most_common_key:
+            prompt_parts.append(f"in {most_common_key}")
         
         # Add energy descriptor
         if chars.get('energy'):
             prompt_parts.append(chars['energy'])
+
+        # Add lyrical themes / keywords
+        keywords = lyrics_info.get('top_keywords', [])
+        if keywords:
+            theme_str = ", ".join(keywords[:5])
+            prompt_parts.append(f"themes of {theme_str}")
         
         prompt = ", ".join(prompt_parts) if prompt_parts else "pop music"
         
@@ -93,6 +111,7 @@ class MusicGenerator:
         prompt: Optional[str] = None,
         duration: int = 30,
         style_profile: Optional[Dict[str, Any]] = None,
+        artist_name: Optional[str] = None,
         output_dir: str = "./output/generated",
         temperature: float = 1.0,
         top_k: int = 250,
@@ -105,6 +124,7 @@ class MusicGenerator:
             prompt: Text description of desired music (optional)
             duration: Duration in seconds
             style_profile: Style profile to guide generation (optional)
+            artist_name: Artist name to mimic (optional)
             output_dir: Directory to save generated audio
             temperature: Sampling temperature (higher = more random)
             top_k: Top-k sampling parameter
@@ -113,6 +133,14 @@ class MusicGenerator:
         Returns:
             Path to generated audio file
         """
+        # Build the prompt first
+        if not prompt and style_profile:
+            prompt = self.style_to_prompt(style_profile, artist_name=artist_name)
+        elif not prompt:
+            prompt = f"{artist_name} style" if artist_name else "pop music"
+        
+        print(f"--- ENHANCED PROMPT: {prompt} ---")
+
         if self.model is None:
             return self._fallback_generate(prompt, duration, output_dir)
         
@@ -122,9 +150,11 @@ class MusicGenerator:
         
         # Build the prompt
         if not prompt and style_profile:
-            prompt = self.style_to_prompt(style_profile)
+            prompt = self.style_to_prompt(style_profile, artist_name=artist_name)
         elif not prompt:
-            prompt = "pop music"
+            prompt = f"{artist_name} style" if artist_name else "pop music"
+        
+        print(f"--- ENHANCED PROMPT: {prompt} ---")
         
         print(f"Generating music with prompt: '{prompt}'")
         print(f"Duration: {duration} seconds")

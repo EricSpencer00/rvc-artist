@@ -45,11 +45,16 @@ def main():
     analyzer = StyleAnalyzer()
     all_features = []
     
+    # Check for transcripts to enhance analysis
+    transcripts_dir = root_dir / "data" / "transcripts"
+    
     for i, audio_file in enumerate(audio_files, 1):
         print(f"\n[{i}/{len(audio_files)}] {audio_file.name}")
         
         try:
-            features = analyzer.analyze(str(audio_file))
+            # Look for matching transcript
+            transcript_path = transcripts_dir / f"{audio_file.stem}.json"
+            features = analyzer.analyze(str(audio_file), transcript_path=str(transcript_path) if transcript_path.exists() else None)
             all_features.append(features)
             
             # Save individual features
@@ -60,6 +65,8 @@ def main():
             if 'error' not in features:
                 print(f"  ✅ Tempo: {features['tempo']['tempo']:.1f} BPM")
                 print(f"  ✅ Key: {features['key']['full_key']}")
+                if 'lyrics' in features:
+                    print(f"  ✅ Keywords: {', '.join(features['lyrics']['keywords'])}")
                 print(f"  ✅ Duration: {features['structure']['duration']:.1f}s")
             else:
                 print(f"  ❌ Error: {features['error']}")
@@ -95,14 +102,29 @@ def main():
     print("-" * 60)
     
     try:
+        from src.services.lyrics_generator import LyricsGenerator
+        
+        # Generate lyrics first
+        print("\nTraining lyrics generator...")
+        lyrics_gen = LyricsGenerator()
+        lyrics_gen.train_from_transcripts(str(transcripts_dir))
+        
+        new_lyrics = lyrics_gen.generate_lyrics(num_lines=4)
+        print("\nGenerated Lyrics for the artist:")
+        print("-" * 20)
+        print(new_lyrics)
+        print("-" * 20)
+        
         generator = MusicGenerator()
         
-        # Generate with style profile
-        print("\nGenerating 10-second sample...")
+        # Generate with style profile and artist name
+        # We'll use the style profile to automatically build a MUCH better prompt now
+        print("\nGenerating 10-second sample with ENHANCED prompt logic...")
         output_file = generator.generate(
-            prompt="energetic hip hop beat",
+            prompt=None, # None means use style_profile + artist_name logic
             duration=10,
             style_profile=style_profile if 'error' not in style_profile else None,
+            artist_name="Yeat", # Hardcoded for this test as we know the artist is Yeat
             output_dir=str(output_dir)
         )
         

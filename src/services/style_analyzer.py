@@ -14,9 +14,11 @@ except ImportError:
 
 import numpy as np
 import json
+import re
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 import warnings
+from collections import Counter
 
 warnings.filterwarnings('ignore')
 
@@ -24,6 +26,23 @@ warnings.filterwarnings('ignore')
 class StyleAnalyzer:
     """Analyzes musical style and features from audio files."""
     
+    # Common stop words to filter out from keywords
+    STOP_WORDS = {
+        'i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves', 'you', 'your', 'yours', 
+        'yourself', 'yourselves', 'he', 'him', 'his', 'himself', 'she', 'her', 'hers', 
+        'herself', 'it', 'its', 'itself', 'they', 'them', 'their', 'theirs', 'themselves', 
+        'what', 'which', 'who', 'whom', 'this', 'that', 'these', 'those', 'am', 'is', 'are', 
+        'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'having', 'do', 'does', 
+        'did', 'doing', 'a', 'an', 'the', 'and', 'but', 'if', 'or', 'because', 'as', 'until', 
+        'while', 'of', 'at', 'by', 'for', 'with', 'about', 'against', 'between', 'into', 
+        'through', 'during', 'before', 'after', 'above', 'below', 'to', 'from', 'up', 'down', 
+        'in', 'out', 'on', 'off', 'over', 'under', 'again', 'further', 'then', 'once', 'here', 
+        'there', 'when', 'where', 'why', 'how', 'all', 'any', 'both', 'each', 'few', 'more', 
+        'most', 'other', 'some', 'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so', 
+        'than', 'too', 'very', 's', 't', 'can', 'will', 'just', 'don', 'should', 'now',
+        'yeah', 'got', 'know', 'like', 'get', 'wanna', 'gonna', 'go', 'make', 'take', 'back'
+    }
+
     def __init__(self, sample_rate: int = 22050):
         """
         Initialize the analyzer.
@@ -112,12 +131,13 @@ class StyleAnalyzer:
             'chroma_vector': chroma_avg.tolist()
         }
     
-    def analyze(self, audio_path: str) -> Dict[str, Any]:
+    def analyze(self, audio_path: str, transcript_path: Optional[str] = None) -> Dict[str, Any]:
         """
         Perform complete analysis on an audio file.
         
         Args:
             audio_path: Path to audio file
+            transcript_path: Optional path to transcript JSON
             
         Returns:
             Dictionary with all features
@@ -150,6 +170,10 @@ class StyleAnalyzer:
                 'rhythm': self.analyze_rhythm(y),
                 'structure': self.analyze_structure(y)
             }
+
+            # Optional transcript analysis
+            if transcript_path and Path(transcript_path).exists():
+                features['lyrics'] = self.extract_lyrics_keywords(transcript_path)
             
             print(f"✅ Analysis complete for {Path(audio_path).name}")
             return features
@@ -160,7 +184,34 @@ class StyleAnalyzer:
                 'audio_file': Path(audio_path).name,
                 'error': str(e)
             }
-    
+
+    def extract_lyrics_keywords(self, transcript_path: str) -> Dict[str, Any]:
+        """
+        Extract keywords and themes from a transcript.
+        """
+        try:
+            with open(transcript_path, 'r') as f:
+                data = json.load(f)
+            
+            text = data.get('text', '')
+            if not text:
+                return {'keywords': [], 'themes': []}
+            
+            # Simple keyword extraction
+            words = re.findall(r'\w+', text.lower())
+            filtered_words = [w for w in words if len(w) > 3 and w not in self.STOP_WORDS]
+            
+            common_words = Counter(filtered_words).most_common(10)
+            keywords = [word for word, count in common_words]
+            
+            return {
+                'keywords': keywords,
+                'word_count': len(words)
+            }
+        except Exception as e:
+            print(f"Error extracting keywords: {e}")
+            return {'keywords': [], 'error': str(e)}
+
     def analyze_energy(self, y: np.ndarray) -> Dict[str, Any]:
         """
         Analyze energy and dynamics.
@@ -315,6 +366,14 @@ class StyleAnalyzer:
         
         # Aggregate structure
         durations = [f['structure']['duration'] for f in valid_features]
+
+        # Aggregate lyrical keywords
+        all_keywords = []
+        for f in valid_features:
+            if 'lyrics' in f and 'keywords' in f['lyrics']:
+                all_keywords.extend(f['lyrics']['keywords'])
+        
+        top_keywords = [word for word, count in Counter(all_keywords).most_common(12)]
         
         profile = {
             'num_songs_analyzed': len(valid_features),
@@ -341,6 +400,9 @@ class StyleAnalyzer:
             'structure': {
                 'avg_duration': float(np.mean(durations)),
                 'duration_std': float(np.std(durations))
+            },
+            'lyrics': {
+                'top_keywords': top_keywords
             },
             'characteristics': self._generate_characteristics(
                 tempos, rms_means, spectral_centroids

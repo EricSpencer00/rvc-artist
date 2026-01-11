@@ -356,10 +356,12 @@ def start_analysis():
 def start_generation():
     """Generate a new song."""
     from src.services.music_generator import MusicGenerator
+    from src.services.lyrics_generator import LyricsGenerator
     
     data = request.json or {}
     prompt = data.get('prompt', '')
     duration = data.get('duration', 30)  # Duration in seconds
+    artist_name = data.get('artist_name', 'Yeat')  # Default to Yeat for now
     
     def generate_task():
         pipeline_state['status'] = 'running'
@@ -370,9 +372,21 @@ def start_generation():
         
         try:
             generator = MusicGenerator()
+            lyrics_gen = LyricsGenerator()
+            
             features_dir = ROOT_DIR / "data" / "features"
+            transcripts_dir = ROOT_DIR / "data" / "transcripts"
             output_dir = ROOT_DIR / "output" / "generated"
             output_dir.mkdir(parents=True, exist_ok=True)
+            
+            # 1. Generate Lyrical Themes / Keywords
+            log_message(f"Training lyrics generator for {artist_name}...")
+            lyrics_gen.train_from_transcripts(str(transcripts_dir))
+            
+            new_lyrics = lyrics_gen.generate_lyrics(num_lines=4)
+            log_message(f"--- GENERATED LYRICS FOR {artist_name} ---")
+            for line in new_lyrics.split('\n'):
+                log_message(f"  {line}")
             
             # Load style profile if available
             style_profile_path = features_dir / "style_profile.json"
@@ -382,16 +396,17 @@ def start_generation():
                     style_profile = json.load(f)
                 log_message("Loaded style profile for generation")
             
-            log_message(f"Generating new song with prompt: {prompt or 'default style'}")
+            log_message(f"Generating new song with prompt: {prompt or 'enhanced artist style'}")
             log_message(f"Duration: {duration} seconds")
             
-            pipeline_state['progress'] = 20
+            pipeline_state['progress'] = 40
             
             # Generate the music
             output_path = generator.generate(
                 prompt=prompt,
                 duration=duration,
                 style_profile=style_profile,
+                artist_name=artist_name,
                 output_dir=str(output_dir)
             )
             
@@ -547,11 +562,26 @@ def run_full_pipeline():
             pipeline_state['current_step'] = 'generate'
             log_message("Step 6/6: Generating new song...")
             
+            # Use LyricsGenerator to show what the artist would say
+            try:
+                from src.services.lyrics_generator import LyricsGenerator
+                lyrics_gen = LyricsGenerator()
+                transcripts_dir = ROOT_DIR / "data" / "transcripts"
+                log_message(f"Training lyrics generator for {artist_name}...")
+                lyrics_gen.train_from_transcripts(str(transcripts_dir))
+                new_lyrics = lyrics_gen.generate_lyrics(num_lines=4)
+                log_message(f"--- GENERATED LYRICS FOR {artist_name} ---")
+                for line in new_lyrics.split('\n'):
+                    log_message(f"  {line}")
+            except Exception as e:
+                log_message(f"Could not generate lyrics: {str(e)}")
+
             generator = MusicGenerator()
             output_path = generator.generate(
                 prompt=prompt,
                 duration=duration,
                 style_profile=style_profile,
+                artist_name=artist_name,
                 output_dir=str(ROOT_DIR / "output" / "generated")
             )
             
