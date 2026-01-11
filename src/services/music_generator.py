@@ -147,17 +147,15 @@ class MusicGenerator:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"generated_{timestamp}.wav"
             output_file = output_path / filename
-            
-            # Convert to numpy and save
+
+            # Convert tensor to CPU for serialization but keep it as torch.Tensor
             from audiocraft.data.audio import audio_write
-            
-            # Remove batch dimension and convert to numpy
-            audio_data = wav.squeeze(0).cpu().numpy()
-            
+            audio_tensor = wav.squeeze(0).cpu()
+
             # Save using audiocraft's audio_write (handles normalization)
             audio_write(
                 str(output_file.with_suffix('')),  # without extension
-                audio_data,
+                audio_tensor,
                 self.model.sample_rate,
                 strategy="loudness",
                 loudness_compressor=True
