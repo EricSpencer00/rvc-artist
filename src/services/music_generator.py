@@ -3,20 +3,65 @@ Music Generator Service
 =======================
 Generates music using Meta's AudioCraft (MusicGen).
 Can be guided by style profiles and text prompts.
+Supports section-aware generation and blueprint-based composition.
 """
 
 import torch
 import numpy as np
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
 import json
 
 
 class MusicGenerator:
-    """Generates music using AudioCraft's MusicGen."""
+    """Generates music using AudioCraft's MusicGen with enhanced style guidance."""
     
-    def __init__(self, model_size: str = "small"):
+    # Section templates for structured generation
+    SECTION_TEMPLATES = {
+        'intro': {
+            'duration': 8,
+            'energy_modifier': 0.6,
+            'descriptors': ['atmospheric intro', 'building anticipation', 'sparse arrangement']
+        },
+        'verse': {
+            'duration': 20,
+            'energy_modifier': 0.8,
+            'descriptors': ['rhythmic verse section', 'steady groove', 'melodic development']
+        },
+        'pre_chorus': {
+            'duration': 8,
+            'energy_modifier': 0.9,
+            'descriptors': ['building tension', 'rising energy', 'pre-drop build']
+        },
+        'chorus': {
+            'duration': 16,
+            'energy_modifier': 1.0,
+            'descriptors': ['powerful chorus', 'full energy', 'catchy hook', 'main theme']
+        },
+        'hook': {
+            'duration': 8,
+            'energy_modifier': 1.0,
+            'descriptors': ['memorable hook', 'earworm melody', 'signature phrase']
+        },
+        'bridge': {
+            'duration': 12,
+            'energy_modifier': 0.7,
+            'descriptors': ['contrasting bridge', 'different texture', 'breakdown section']
+        },
+        'drop': {
+            'duration': 16,
+            'energy_modifier': 1.0,
+            'descriptors': ['heavy drop', 'maximum energy', 'bass-heavy impact', 'climax']
+        },
+        'outro': {
+            'duration': 10,
+            'energy_modifier': 0.5,
+            'descriptors': ['fading outro', 'winding down', 'conclusion']
+        }
+    }
+    
+    def __init__(self, model_size: str = "large"):
         """
         Initialize the generator.
         
@@ -35,22 +80,24 @@ class MusicGenerator:
             self.device = "cpu"
             
         self._load_model()
-    
+
     def _load_model(self):
         """Load the MusicGen model."""
         try:
             from audiocraft.models import MusicGen
             print(f"Loading MusicGen model: {self.model_size} on {self.device}")
             
-            # Load on CPU first to avoid autocast issues during initialization on MPS
+            # MPS has autocast issues with AudioCraft, load on CPU instead
+            # With 64GB RAM, CPU inference is viable for generation
             if self.device == "mps":
+                print(f"Note: MusicGen doesn't fully support MPS autocast, using CPU")
+                print(f"With 64GB RAM, CPU generation is still fast enough")
                 self.model = MusicGen.get_pretrained(self.model_size, device="cpu")
-                print("Moving model to MPS...")
-                self.model.to("mps")
+                self.device = "cpu"  # Update device to CPU
             else:
                 self.model = MusicGen.get_pretrained(self.model_size, device=self.device)
                 
-            print("MusicGen model loaded successfully")
+            print(f"✅ MusicGen {self.model_size} model loaded successfully on {self.device}")
         except ImportError:
             print("AudioCraft not available. Install with: pip install audiocraft")
             self.model = None
@@ -61,6 +108,7 @@ class MusicGenerator:
     def style_to_prompt(self, style_profile: Optional[Dict[str, Any]] = None, artist_name: Optional[str] = None) -> str:
         """
         Convert a style profile to a text prompt for MusicGen.
+        Uses rich feature-to-text mapping for better results.
         
         Args:
             style_profile: Style profile from StyleAnalyzer
@@ -78,6 +126,8 @@ class MusicGenerator:
         tempo = style_profile.get('tempo', {})
         key_info = style_profile.get('key', {})
         lyrics_info = style_profile.get('lyrics', {})
+        energy = style_profile.get('energy', {})
+        spectral = style_profile.get('spectral', {})
         
         # Build descriptive prompt
         prompt_parts = []
@@ -89,38 +139,126 @@ class MusicGenerator:
             # Special artist-specific enhancers
             artist_lower = artist_name.lower()
             if 'yeat' in artist_lower:
-                prompt_parts.extend(["aggressive trap beat", "heavy distorted 808", "synthetic bells", "rage trap"])
+                prompt_parts.extend(["aggressive trap beat", "heavy distorted 808", "synthetic bells", "rage trap", "saturated texture"])
             elif 'playboi carti' in artist_lower or 'carti' in artist_lower:
-                prompt_parts.extend(["minimalist trap", "high pitched synths", "vampire aesthetic", "f1lthy style"])
+                prompt_parts.extend(["minimalist trap", "high pitched synths", "vampire aesthetic", "f1lthy style", "dark moody pads"])
             elif 'travis scott' in artist_lower:
-                prompt_parts.extend(["psychedelic trap", "dark atmospheric", "heavy reverb", "distorted vocals"])
+                prompt_parts.extend(["psychedelic trap", "dark atmospheric", "heavy reverb", "distorted vocals", "cinematic low end"])
+            elif 'drake' in artist_lower:
+                prompt_parts.extend(["melodic rap", "atmospheric pads", "emotional chords", "OVO sound", "smooth transitions"])
+            elif 'future' in artist_lower:
+                prompt_parts.extend(["dark trap", "heavy auto-tune influence", "808 patterns", "melancholic melodies"])
+            elif 'metro boomin' in artist_lower or 'metro' in artist_lower:
+                prompt_parts.extend(["cinematic trap", "orchestral elements", "hard hitting drums", "dark atmosphere"])
         
-        # Add overall characteristics
-        if chars.get('overall'):
-            prompt_parts.append(chars['overall'])
+        # Add high-quality production descriptors (Suno style)
+        prompt_parts.extend(["studio quality", "professional mix", "crisp percussion", "high fidelity"])
         
-        # Add tempo info
+        # Add tempo-based descriptors (more specific)
         tempo_mean = tempo.get('mean', 120)
+        tempo_std = tempo.get('std', 10)
+        
+        if tempo_mean < 80:
+            prompt_parts.append("slow groove")
+        elif tempo_mean < 100:
+            prompt_parts.append("mid-tempo chill vibe")
+        elif tempo_mean < 120:
+            prompt_parts.append("steady driving rhythm")
+        elif tempo_mean < 140:
+            prompt_parts.append("upbeat energetic pace")
+        elif tempo_mean < 160:
+            prompt_parts.append("fast aggressive tempo")
+        else:
+            prompt_parts.append("hyper-speed intensity")
+        
         prompt_parts.append(f"{int(tempo_mean)} BPM")
+        
+        # Add energy-based descriptors
+        rms_mean = energy.get('rms_mean', 0.1)
+        dynamic_range = energy.get('dynamic_range_mean', 0.1)
+        
+        if rms_mean > 0.15:
+            prompt_parts.append("loud punchy mix")
+        elif rms_mean < 0.05:
+            prompt_parts.append("soft intimate production")
+        
+        if dynamic_range > 0.15:
+            prompt_parts.append("big dynamic drops")
+        
+        # Add spectral/timbre descriptors
+        brightness = spectral.get('brightness_mean', 2000)
+        
+        if brightness < 1500:
+            prompt_parts.append("warm dark low-end heavy")
+        elif brightness > 3000:
+            prompt_parts.append("bright crisp treble")
         
         # Add key if available
         most_common_key = key_info.get('most_common', '')
         if most_common_key:
             prompt_parts.append(f"in {most_common_key}")
         
-        # Add energy descriptor
-        if chars.get('energy'):
-            prompt_parts.append(chars['energy'])
+        # Add overall characteristics
+        if chars.get('overall'):
+            prompt_parts.append(chars['overall'])
 
-        # Add lyrical themes / keywords
+        # Add lyrical themes / keywords (top 5)
         keywords = lyrics_info.get('top_keywords', [])
         if keywords:
-            theme_str = ", ".join(keywords[:5])
+            # Map keywords to musical descriptors
+            keyword_mood_map = {
+                'money': 'luxury flex vibes',
+                'love': 'emotional melodic feel',
+                'dark': 'dark moody atmosphere',
+                'fast': 'high energy intensity',
+                'night': 'nocturnal mysterious vibe',
+                'gang': 'street aggressive energy',
+                'pain': 'melancholic emotional depth',
+            }
+            
+            for kw in keywords[:3]:
+                if kw.lower() in keyword_mood_map:
+                    prompt_parts.append(keyword_mood_map[kw.lower()])
+            
+            # Also include raw themes
+            theme_str = ", ".join(keywords[:4])
             prompt_parts.append(f"themes of {theme_str}")
         
         prompt = ", ".join(prompt_parts) if prompt_parts else "pop music"
         
         return prompt
+
+    def build_section_prompt(
+        self,
+        base_prompt: str,
+        section_type: str,
+        energy_level: float = 1.0
+    ) -> str:
+        """
+        Build a prompt for a specific song section.
+        
+        Args:
+            base_prompt: Base style prompt
+            section_type: Type of section (intro, verse, chorus, etc.)
+            energy_level: Energy modifier (0.0 to 1.0)
+            
+        Returns:
+            Section-specific prompt
+        """
+        section_info = self.SECTION_TEMPLATES.get(section_type, self.SECTION_TEMPLATES['verse'])
+        descriptors = section_info['descriptors']
+        
+        # Modify energy descriptor
+        if energy_level < 0.5:
+            energy_desc = "low energy, calm"
+        elif energy_level < 0.8:
+            energy_desc = "moderate energy, building"
+        else:
+            energy_desc = "high energy, intense"
+        
+        section_prompt = f"{base_prompt}, {', '.join(descriptors)}, {energy_desc}"
+        
+        return section_prompt
     
     def generate(
         self,
@@ -180,25 +318,7 @@ class MusicGenerator:
             
             # Generate
             descriptions = [prompt]
-            
-            # On MPS, we sometimes need to disable autocast to avoid "device_type" errors
-            if self.device == "mps":
-                import contextlib
-                # Create a fake autocast to bypass internal ones if they fail
-                # or just use a nullcontext if the user is on an older torch version
-                try:
-                    wav = self.model.generate(descriptions, progress=True)
-                except Exception as e:
-                    if "autocast" in str(e).lower():
-                        print("MPS Autocast error detected, trying with CPU fallback for generation step...")
-                        # Move to CPU for generation call if MPS fails specifically due to autocast
-                        self.model.to("cpu")
-                        wav = self.model.generate(descriptions, progress=True)
-                        self.model.to("mps")
-                    else:
-                        raise e
-            else:
-                wav = self.model.generate(descriptions, progress=True)
+            wav = self.model.generate(descriptions, progress=True)
             
             # Save the audio
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -407,3 +527,287 @@ class MusicGenerator:
         except Exception as e:
             print(f"Error generating continuation: {e}")
             return ""
+
+    def generate_section(
+        self,
+        section_type: str,
+        style_profile: Optional[Dict[str, Any]] = None,
+        artist_name: Optional[str] = None,
+        duration: Optional[int] = None,
+        output_dir: str = "./output/generated"
+    ) -> str:
+        """
+        Generate audio for a specific song section.
+        
+        Args:
+            section_type: Type of section (intro, verse, chorus, etc.)
+            style_profile: Style profile to guide generation
+            artist_name: Artist name to mimic
+            duration: Duration in seconds (uses template default if None)
+            output_dir: Output directory
+            
+        Returns:
+            Path to generated audio file
+        """
+        section_info = self.SECTION_TEMPLATES.get(section_type, self.SECTION_TEMPLATES['verse'])
+        
+        if duration is None:
+            duration = section_info['duration']
+        
+        # Build base prompt from style
+        base_prompt = self.style_to_prompt(style_profile, artist_name)
+        
+        # Build section-specific prompt
+        section_prompt = self.build_section_prompt(
+            base_prompt,
+            section_type,
+            section_info['energy_modifier']
+        )
+        
+        print(f"Generating {section_type} section ({duration}s)...")
+        print(f"Section prompt: {section_prompt[:100]}...")
+        
+        return self.generate(
+            prompt=section_prompt,
+            duration=duration,
+            style_profile=style_profile,
+            artist_name=artist_name,
+            output_dir=output_dir
+        )
+
+    def generate_from_blueprint(
+        self,
+        blueprint: Dict[str, Any],
+        style_profile: Optional[Dict[str, Any]] = None,
+        artist_name: Optional[str] = None,
+        output_dir: str = "./output/generated"
+    ) -> Dict[str, Any]:
+        """
+        Generate a full song from a blueprint with multiple sections.
+        
+        Args:
+            blueprint: Song blueprint with structure and section info
+            style_profile: Style profile to guide generation
+            artist_name: Artist name to mimic
+            output_dir: Output directory
+            
+        Returns:
+            Dictionary with paths to generated sections and combined file
+        """
+        import soundfile as sf
+        
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        sections = blueprint.get('sections', [])
+        if not sections:
+            sections = [
+                {'type': 'intro', 'duration': 8},
+                {'type': 'verse', 'duration': 20},
+                {'type': 'chorus', 'duration': 16},
+                {'type': 'verse', 'duration': 20},
+                {'type': 'chorus', 'duration': 16},
+                {'type': 'outro', 'duration': 10}
+            ]
+        
+        generated_sections = []
+        all_audio = []
+        sample_rate = None
+        
+        for i, section in enumerate(sections):
+            section_type = section.get('type', 'verse')
+            duration = section.get('duration', self.SECTION_TEMPLATES.get(section_type, {}).get('duration', 16))
+            
+            print(f"\n[{i+1}/{len(sections)}] Generating {section_type}...")
+            
+            section_file = self.generate_section(
+                section_type=section_type,
+                style_profile=style_profile,
+                artist_name=artist_name,
+                duration=duration,
+                output_dir=str(output_path / "sections")
+            )
+            
+            generated_sections.append({
+                'type': section_type,
+                'duration': duration,
+                'file': section_file
+            })
+            
+            # Load audio for concatenation
+            try:
+                audio, sr = sf.read(section_file)
+                if sample_rate is None:
+                    sample_rate = sr
+                all_audio.append(audio)
+            except Exception as e:
+                print(f"Warning: Could not load section audio: {e}")
+        
+        # Concatenate all sections
+        combined_file = None
+        if all_audio and sample_rate:
+            try:
+                # Simple concatenation with crossfade
+                combined = self._concatenate_with_crossfade(all_audio, sample_rate)
+                
+                combined_filename = f"full_song_{timestamp}.wav"
+                combined_file = output_path / combined_filename
+                
+                sf.write(combined_file, combined, sample_rate)
+                print(f"\n✅ Full song saved to: {combined_file}")
+            except Exception as e:
+                print(f"Warning: Could not concatenate sections: {e}")
+        
+        # Save blueprint results
+        result = {
+            'blueprint': blueprint,
+            'sections': generated_sections,
+            'combined_file': str(combined_file) if combined_file else None,
+            'timestamp': timestamp
+        }
+        
+        result_file = output_path / f"blueprint_result_{timestamp}.json"
+        with open(result_file, 'w') as f:
+            json.dump(result, f, indent=2)
+        
+        return result
+
+    def _concatenate_with_crossfade(
+        self,
+        audio_segments: List[np.ndarray],
+        sample_rate: int,
+        crossfade_duration: float = 0.5
+    ) -> np.ndarray:
+        """
+        Concatenate audio segments with crossfade.
+        
+        Args:
+            audio_segments: List of audio arrays
+            sample_rate: Sample rate
+            crossfade_duration: Crossfade duration in seconds
+            
+        Returns:
+            Combined audio array
+        """
+        if not audio_segments:
+            return np.array([])
+        
+        if len(audio_segments) == 1:
+            return audio_segments[0]
+        
+        crossfade_samples = int(crossfade_duration * sample_rate)
+        
+        # Start with first segment
+        result = audio_segments[0].copy()
+        
+        for segment in audio_segments[1:]:
+            if len(result) < crossfade_samples or len(segment) < crossfade_samples:
+                # Too short for crossfade, just concatenate
+                result = np.concatenate([result, segment])
+            else:
+                # Apply crossfade
+                fade_out = np.linspace(1, 0, crossfade_samples)
+                fade_in = np.linspace(0, 1, crossfade_samples)
+                
+                # Handle stereo vs mono
+                if len(result.shape) > 1:
+                    fade_out = fade_out.reshape(-1, 1)
+                    fade_in = fade_in.reshape(-1, 1)
+                
+                # Crossfade region
+                result[-crossfade_samples:] *= fade_out
+                segment_copy = segment.copy()
+                segment_copy[:crossfade_samples] *= fade_in
+                
+                # Overlap-add
+                result[-crossfade_samples:] += segment_copy[:crossfade_samples]
+                result = np.concatenate([result, segment_copy[crossfade_samples:]])
+        
+        return result
+
+    def create_default_blueprint(
+        self,
+        total_duration: int = 120,
+        style: str = 'standard'
+    ) -> Dict[str, Any]:
+        """
+        Create a default song blueprint.
+        
+        Args:
+            total_duration: Approximate total duration in seconds
+            style: Blueprint style ('standard', 'extended', 'short', 'trap', 'edm')
+            
+        Returns:
+            Blueprint dictionary
+        """
+        blueprints = {
+            'standard': [
+                {'type': 'intro', 'duration': 8},
+                {'type': 'verse', 'duration': 20},
+                {'type': 'chorus', 'duration': 16},
+                {'type': 'verse', 'duration': 20},
+                {'type': 'chorus', 'duration': 16},
+                {'type': 'bridge', 'duration': 12},
+                {'type': 'chorus', 'duration': 16},
+                {'type': 'outro', 'duration': 10}
+            ],
+            'short': [
+                {'type': 'intro', 'duration': 4},
+                {'type': 'verse', 'duration': 16},
+                {'type': 'chorus', 'duration': 12},
+                {'type': 'outro', 'duration': 8}
+            ],
+            'trap': [
+                {'type': 'intro', 'duration': 8},
+                {'type': 'hook', 'duration': 8},
+                {'type': 'verse', 'duration': 24},
+                {'type': 'hook', 'duration': 8},
+                {'type': 'verse', 'duration': 24},
+                {'type': 'hook', 'duration': 8},
+                {'type': 'bridge', 'duration': 8},
+                {'type': 'drop', 'duration': 16},
+                {'type': 'outro', 'duration': 8}
+            ],
+            'edm': [
+                {'type': 'intro', 'duration': 16},
+                {'type': 'pre_chorus', 'duration': 16},
+                {'type': 'drop', 'duration': 16},
+                {'type': 'bridge', 'duration': 8},
+                {'type': 'pre_chorus', 'duration': 16},
+                {'type': 'drop', 'duration': 16},
+                {'type': 'outro', 'duration': 16}
+            ],
+            'extended': [
+                {'type': 'intro', 'duration': 12},
+                {'type': 'verse', 'duration': 24},
+                {'type': 'pre_chorus', 'duration': 8},
+                {'type': 'chorus', 'duration': 20},
+                {'type': 'verse', 'duration': 24},
+                {'type': 'pre_chorus', 'duration': 8},
+                {'type': 'chorus', 'duration': 20},
+                {'type': 'bridge', 'duration': 16},
+                {'type': 'chorus', 'duration': 20},
+                {'type': 'outro', 'duration': 16}
+            ]
+        }
+        
+        sections = blueprints.get(style, blueprints['standard'])
+        
+        # Scale durations to match total_duration
+        current_total = sum(s['duration'] for s in sections)
+        scale_factor = total_duration / current_total
+        
+        scaled_sections = []
+        for section in sections:
+            scaled_sections.append({
+                'type': section['type'],
+                'duration': max(4, int(section['duration'] * scale_factor))
+            })
+        
+        return {
+            'style': style,
+            'target_duration': total_duration,
+            'sections': scaled_sections
+        }

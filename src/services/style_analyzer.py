@@ -3,6 +3,7 @@ Style Analyzer Service
 ======================
 Analyzes musical features from audio files using librosa (if available).
 Extracts tempo, key, energy, spectral features, and creates style profiles.
+Supports named profiles for different song subsets.
 Falls back to basic analysis if librosa is not installed.
 """
 
@@ -16,9 +17,10 @@ import numpy as np
 import json
 import re
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Set
 import warnings
 from collections import Counter
+from datetime import datetime
 
 warnings.filterwarnings('ignore')
 
@@ -464,3 +466,254 @@ class StyleAnalyzer:
             'timbre': brightness_desc,
             'overall': f"{tempo_desc}, {energy_desc}, {brightness_desc} sound"
         }
+
+    def features_to_prompt_descriptors(self, profile: Dict[str, Any]) -> List[str]:
+        """
+        Convert a style profile into rich, descriptive prompt phrases.
+        
+        Args:
+            profile: Style profile dictionary
+            
+        Returns:
+            List of descriptive phrases for prompt construction
+        """
+        descriptors = []
+        
+        # Tempo descriptors
+        tempo = profile.get('tempo', {})
+        tempo_mean = tempo.get('mean', 120)
+        tempo_std = tempo.get('std', 10)
+        
+        if tempo_mean < 80:
+            descriptors.append("slow groove")
+        elif tempo_mean < 100:
+            descriptors.append("mid-tempo laid-back feel")
+        elif tempo_mean < 120:
+            descriptors.append("steady driving rhythm")
+        elif tempo_mean < 140:
+            descriptors.append("upbeat energetic tempo")
+        elif tempo_mean < 160:
+            descriptors.append("fast aggressive tempo")
+        else:
+            descriptors.append("hyper-speed tempo")
+        
+        # Tempo consistency
+        if tempo_std < 5:
+            descriptors.append("consistent locked groove")
+        elif tempo_std > 15:
+            descriptors.append("varied tempo changes")
+        
+        # Energy descriptors
+        energy = profile.get('energy', {})
+        rms_mean = energy.get('rms_mean', 0.1)
+        dynamic_range = energy.get('dynamic_range_mean', 0.1)
+        
+        if rms_mean < 0.05:
+            descriptors.append("soft intimate production")
+        elif rms_mean < 0.1:
+            descriptors.append("balanced dynamics")
+        elif rms_mean < 0.15:
+            descriptors.append("loud punchy mix")
+        else:
+            descriptors.append("heavily compressed loud master")
+        
+        if dynamic_range > 0.15:
+            descriptors.append("huge dynamic range with punchy drops")
+        elif dynamic_range < 0.05:
+            descriptors.append("consistent sustained energy")
+        
+        # Spectral/brightness descriptors
+        spectral = profile.get('spectral', {})
+        brightness = spectral.get('brightness_mean', 2000)
+        
+        if brightness < 1200:
+            descriptors.append("warm dark low-end heavy")
+        elif brightness < 1800:
+            descriptors.append("warm balanced frequencies")
+        elif brightness < 2500:
+            descriptors.append("clear balanced mix")
+        elif brightness < 3500:
+            descriptors.append("bright crisp highs")
+        else:
+            descriptors.append("sharp piercing treble")
+        
+        # Structure descriptors
+        structure = profile.get('structure', {})
+        avg_duration = structure.get('avg_duration', 180)
+        
+        if avg_duration < 120:
+            descriptors.append("short punchy arrangement")
+        elif avg_duration < 180:
+            descriptors.append("standard song structure")
+        elif avg_duration < 240:
+            descriptors.append("extended arrangement")
+        else:
+            descriptors.append("long evolving composition")
+        
+        # Lyrical theme descriptors
+        lyrics = profile.get('lyrics', {})
+        keywords = lyrics.get('top_keywords', [])
+        if keywords:
+            # Group common themes
+            money_words = {'money', 'cash', 'rich', 'bands', 'racks', 'millions', 'dollars'}
+            flex_words = {'drip', 'ice', 'chains', 'designer', 'gucci', 'benz', 'lambo'}
+            dark_words = {'dark', 'pain', 'demons', 'death', 'blood', 'hate', 'evil'}
+            love_words = {'love', 'heart', 'baby', 'girl', 'miss', 'feel'}
+            hype_words = {'yeah', 'lit', 'turnt', 'gang', 'squad', 'rage'}
+            
+            keyword_set = set(k.lower() for k in keywords)
+            
+            if keyword_set & money_words:
+                descriptors.append("wealth flex themes")
+            if keyword_set & flex_words:
+                descriptors.append("luxury lifestyle imagery")
+            if keyword_set & dark_words:
+                descriptors.append("dark aggressive mood")
+            if keyword_set & love_words:
+                descriptors.append("emotional melodic themes")
+            if keyword_set & hype_words:
+                descriptors.append("hype party energy")
+        
+        return descriptors
+
+    def save_named_profile(
+        self,
+        profile: Dict[str, Any],
+        profile_name: str,
+        output_dir: str = "./data/features"
+    ) -> str:
+        """
+        Save a style profile with a specific name.
+        
+        Args:
+            profile: Style profile dictionary
+            profile_name: Name identifier for this profile
+            output_dir: Directory to save the profile
+            
+        Returns:
+            Path to the saved profile
+        """
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        
+        # Sanitize profile name
+        safe_name = re.sub(r'[^\w\-_]', '_', profile_name.lower())
+        filename = f"style_profile_{safe_name}.json"
+        filepath = output_path / filename
+        
+        # Add metadata
+        profile['profile_name'] = profile_name
+        profile['created_at'] = datetime.now().isoformat()
+        
+        with open(filepath, 'w') as f:
+            json.dump(profile, f, indent=2)
+        
+        print(f"✅ Saved named profile: {filepath}")
+        return str(filepath)
+
+    def load_named_profile(
+        self,
+        profile_name: str,
+        profiles_dir: str = "./data/features"
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Load a named style profile.
+        
+        Args:
+            profile_name: Name identifier for the profile
+            profiles_dir: Directory containing profiles
+            
+        Returns:
+            Style profile dictionary or None if not found
+        """
+        profiles_path = Path(profiles_dir)
+        
+        # Try exact match first
+        safe_name = re.sub(r'[^\w\-_]', '_', profile_name.lower())
+        filepath = profiles_path / f"style_profile_{safe_name}.json"
+        
+        if filepath.exists():
+            with open(filepath, 'r') as f:
+                return json.load(f)
+        
+        # Try default profile
+        default_path = profiles_path / "style_profile.json"
+        if default_path.exists():
+            with open(default_path, 'r') as f:
+                return json.load(f)
+        
+        return None
+
+    def list_profiles(self, profiles_dir: str = "./data/features") -> List[Dict[str, str]]:
+        """
+        List all available style profiles.
+        
+        Args:
+            profiles_dir: Directory containing profiles
+            
+        Returns:
+            List of profile info dictionaries
+        """
+        profiles_path = Path(profiles_dir)
+        profiles = []
+        
+        if not profiles_path.exists():
+            return profiles
+        
+        for filepath in profiles_path.glob("style_profile*.json"):
+            try:
+                with open(filepath, 'r') as f:
+                    data = json.load(f)
+                profiles.append({
+                    'filename': filepath.name,
+                    'profile_name': data.get('profile_name', 'default'),
+                    'num_songs': data.get('num_songs_analyzed', 0),
+                    'created_at': data.get('created_at', 'unknown'),
+                    'path': str(filepath)
+                })
+            except Exception:
+                pass
+        
+        return profiles
+
+    def analyze_subset(
+        self,
+        audio_files: List[str],
+        profile_name: str,
+        transcripts_dir: Optional[str] = None,
+        output_dir: str = "./data/features"
+    ) -> Dict[str, Any]:
+        """
+        Analyze a specific subset of audio files and create a named profile.
+        
+        Args:
+            audio_files: List of audio file paths to analyze
+            profile_name: Name for this profile
+            transcripts_dir: Optional directory with transcripts
+            output_dir: Directory to save profile
+            
+        Returns:
+            The created style profile
+        """
+        all_features = []
+        
+        for audio_path in audio_files:
+            audio_file = Path(audio_path)
+            
+            # Look for matching transcript
+            transcript_path = None
+            if transcripts_dir:
+                t_path = Path(transcripts_dir) / f"{audio_file.stem}.json"
+                if t_path.exists():
+                    transcript_path = str(t_path)
+            
+            features = self.analyze(str(audio_file), transcript_path=transcript_path)
+            all_features.append(features)
+        
+        # Create and save the profile
+        profile = self.create_style_profile(all_features)
+        profile['source_files'] = [Path(f).name for f in audio_files]
+        
+        self.save_named_profile(profile, profile_name, output_dir)
+        
+        return profile

@@ -1,5 +1,6 @@
 """
 Pipeline Routes - Orchestrates the music generation pipeline
+Supports named style profiles, section-aware generation, and blueprint-based composition.
 """
 
 from flask import Blueprint, jsonify, request
@@ -50,6 +51,327 @@ def clear_logs():
     pipeline_state['logs'] = []
     return jsonify({'status': 'cleared'})
 
+
+# ============================================================================
+# STYLE PROFILE MANAGEMENT ROUTES
+# ============================================================================
+
+@pipeline_bp.route('/profiles', methods=['GET'])
+def list_profiles():
+    """List all available style profiles."""
+    from src.services.style_analyzer import StyleAnalyzer
+    
+    analyzer = StyleAnalyzer()
+    profiles = analyzer.list_profiles(str(ROOT_DIR / "data" / "features"))
+    
+    return jsonify({
+        'profiles': profiles,
+        'count': len(profiles)
+    })
+
+
+@pipeline_bp.route('/profiles/<profile_name>', methods=['GET'])
+def get_profile(profile_name):
+    """Get a specific style profile by name."""
+    from src.services.style_analyzer import StyleAnalyzer
+    
+    analyzer = StyleAnalyzer()
+    profile = analyzer.load_named_profile(profile_name, str(ROOT_DIR / "data" / "features"))
+    
+    if profile:
+        return jsonify(profile)
+    else:
+        return jsonify({'error': f'Profile "{profile_name}" not found'}), 404
+
+
+@pipeline_bp.route('/profiles/create', methods=['POST'])
+def create_named_profile():
+    """Create a named style profile from specific audio files."""
+    from src.services.style_analyzer import StyleAnalyzer
+    
+    data = request.json or {}
+    profile_name = data.get('profile_name', 'custom')
+    audio_files = data.get('audio_files', [])  # List of filenames or paths
+    
+    if not audio_files:
+        # Use all files in raw audio directory
+        audio_dir = ROOT_DIR / "data" / "audio" / "raw"
+        audio_files = (
+            list(audio_dir.glob("*.mp3")) +
+            list(audio_dir.glob("*.wav")) +
+            list(audio_dir.glob("*.m4a")) +
+            list(audio_dir.glob("*.webm"))
+        )
+        audio_files = [str(f) for f in audio_files]
+    else:
+        # Resolve relative paths
+        audio_dir = ROOT_DIR / "data" / "audio" / "raw"
+        resolved = []
+        for f in audio_files:
+            if os.path.isabs(f):
+                resolved.append(f)
+            else:
+                resolved.append(str(audio_dir / f))
+        audio_files = resolved
+    
+    def create_profile_task():
+        pipeline_state['status'] = 'running'
+        pipeline_state['current_step'] = 'create_profile'
+        pipeline_state['progress'] = 0
+        pipeline_state['error'] = None
+        pipeline_state['started_at'] = datetime.now().isoformat()
+        
+        try:
+            analyzer = StyleAnalyzer()
+            log_message(f"Creating profile '{profile_name}' from {len(audio_files)} files...")
+            
+            profile = analyzer.analyze_subset(
+                audio_files=audio_files,
+                profile_name=profile_name,
+                transcripts_dir=str(ROOT_DIR / "data" / "transcripts"),
+                output_dir=str(ROOT_DIR / "data" / "features")
+            )
+            
+            pipeline_state['status'] = 'completed'
+            pipeline_state['progress'] = 100
+            pipeline_state['completed_at'] = datetime.now().isoformat()
+            log_message(f"Profile '{profile_name}' created with {profile.get('num_songs_analyzed', 0)} songs")
+            
+        except Exception as e:
+            pipeline_state['status'] = 'error'
+            pipeline_state['error'] = str(e)
+            log_message(f"Error creating profile: {str(e)}")
+    
+    thread = threading.Thread(target=create_profile_task)
+    thread.start()
+    
+    return jsonify({
+        'status': 'started',
+        'message': f'Creating profile "{profile_name}" in background',
+        'num_files': len(audio_files)
+    })
+
+
+# ============================================================================
+# ADVANCED GENERATION ROUTES
+# ============================================================================
+
+@pipeline_bp.route('/generate-variations', methods=['POST'])
+def generate_variations():
+    """Generate multiple variations of a song."""
+    from src.services.music_generator import MusicGenerator
+    
+    data = request.json or {}
+    prompt = data.get('prompt', '')
+    num_variations = data.get('num_variations', 3)
+    duration = data.get('duration', 30)
+    artist_name = data.get('artist_name', 'Yeat')
+    profile_name = data.get('profile_name', None)
+    
+    def variations_task():
+        pipeline_state['status'] = 'running'
+        pipeline_state['current_step'] = 'generate_variations'
+        pipeline_state['progress'] = 0
+        pipeline_state['error'] = None
+        pipeline_state['started_at'] = datetime.now().isoformat()
+        
+        try:
+            from src.services.style_analyzer import StyleAnalyzer
+            
+            generator = MusicGenerator()
+            analyzer = StyleAnalyzer()
+            
+            # Load style profile
+            style_profile = None
+            if profile_name:
+                style_profile = analyzer.load_named_profile(profile_name, str(ROOT_DIR / "data" / "features"))
+            else:
+                default_path = ROOT_DIR / "data" / "features" / "style_profile.json"
+                if default_path.exists():
+                    with open(default_path) as f:
+                        style_profile = json.load(f)
+            
+            # Build prompt if not provided
+            if not prompt and style_profile:
+                prompt = generator.style_to_prompt(style_profile, artist_name)
+            
+            log_message(f"Generating {num_variations} variations...")
+            log_message(f"Prompt: {prompt[:100]}...")
+            
+            variations = []
+            for i in range(num_variations):
+                pipeline_state['progress'] = int((i / num_variations) * 100)
+                log_message(f"Generating variation {i+1}/{num_variations}...")
+                
+                temp = 1.0 + (i * 0.15)  # Slightly vary temperature
+                
+                output_file = generator.generate(
+                    prompt=prompt,
+                    duration=duration,
+                    style_profile=style_profile,
+                    artist_name=artist_name,
+                    output_dir=str(ROOT_DIR / "output" / "generated"),
+                    temperature=temp
+                )
+                variations.append(output_file)
+            
+            pipeline_state['status'] = 'completed'
+            pipeline_state['progress'] = 100
+            pipeline_state['completed_at'] = datetime.now().isoformat()
+            log_message(f"Generated {len(variations)} variations!")
+            
+        except Exception as e:
+            pipeline_state['status'] = 'error'
+            pipeline_state['error'] = str(e)
+            log_message(f"Error generating variations: {str(e)}")
+    
+    thread = threading.Thread(target=variations_task)
+    thread.start()
+    
+    return jsonify({
+        'status': 'started',
+        'message': f'Generating {num_variations} variations in background'
+    })
+
+
+@pipeline_bp.route('/generate-blueprint', methods=['POST'])
+def generate_from_blueprint():
+    """Generate a full song from a blueprint (section-aware generation)."""
+    from src.services.music_generator import MusicGenerator
+    
+    data = request.json or {}
+    blueprint_style = data.get('blueprint_style', 'standard')  # standard, short, trap, edm, extended
+    total_duration = data.get('total_duration', 120)
+    artist_name = data.get('artist_name', 'Yeat')
+    profile_name = data.get('profile_name', None)
+    custom_blueprint = data.get('blueprint', None)  # Allow custom section list
+    
+    def blueprint_task():
+        pipeline_state['status'] = 'running'
+        pipeline_state['current_step'] = 'generate_blueprint'
+        pipeline_state['progress'] = 0
+        pipeline_state['error'] = None
+        pipeline_state['started_at'] = datetime.now().isoformat()
+        
+        try:
+            from src.services.style_analyzer import StyleAnalyzer
+            
+            generator = MusicGenerator()
+            analyzer = StyleAnalyzer()
+            
+            # Load style profile
+            style_profile = None
+            if profile_name:
+                style_profile = analyzer.load_named_profile(profile_name, str(ROOT_DIR / "data" / "features"))
+            else:
+                default_path = ROOT_DIR / "data" / "features" / "style_profile.json"
+                if default_path.exists():
+                    with open(default_path) as f:
+                        style_profile = json.load(f)
+            
+            # Create or use provided blueprint
+            if custom_blueprint:
+                blueprint = custom_blueprint
+            else:
+                blueprint = generator.create_default_blueprint(total_duration, blueprint_style)
+            
+            log_message(f"Generating song from blueprint (style: {blueprint_style})")
+            log_message(f"Sections: {[s['type'] for s in blueprint['sections']]}")
+            
+            result = generator.generate_from_blueprint(
+                blueprint=blueprint,
+                style_profile=style_profile,
+                artist_name=artist_name,
+                output_dir=str(ROOT_DIR / "output" / "generated")
+            )
+            
+            pipeline_state['status'] = 'completed'
+            pipeline_state['progress'] = 100
+            pipeline_state['completed_at'] = datetime.now().isoformat()
+            log_message(f"Blueprint generation complete!")
+            if result.get('combined_file'):
+                log_message(f"Full song: {result['combined_file']}")
+            
+        except Exception as e:
+            pipeline_state['status'] = 'error'
+            pipeline_state['error'] = str(e)
+            log_message(f"Error in blueprint generation: {str(e)}")
+            import traceback
+            log_message(traceback.format_exc())
+    
+    thread = threading.Thread(target=blueprint_task)
+    thread.start()
+    
+    return jsonify({
+        'status': 'started',
+        'message': f'Generating {blueprint_style} blueprint song in background'
+    })
+
+
+@pipeline_bp.route('/generate-lyrics', methods=['POST'])
+def generate_lyrics():
+    """Generate lyrics in artist style."""
+    from src.services.lyrics_generator import LyricsGenerator
+    from src.services.style_analyzer import StyleAnalyzer
+    
+    data = request.json or {}
+    num_lines = data.get('num_lines', 8)
+    section_type = data.get('section_type', None)  # verse, chorus, hook, etc.
+    rhyme_scheme = data.get('rhyme_scheme', None)  # AABB, ABAB, etc.
+    profile_name = data.get('profile_name', None)
+    generate_full_song = data.get('full_song', False)
+    structure = data.get('structure', None)  # For full song generation
+    
+    try:
+        lyrics_gen = LyricsGenerator()
+        analyzer = StyleAnalyzer()
+        
+        transcripts_dir = ROOT_DIR / "data" / "transcripts"
+        lyrics_gen.train_from_transcripts(str(transcripts_dir))
+        
+        # Load style profile for keyword conditioning
+        style_profile = None
+        if profile_name:
+            style_profile = analyzer.load_named_profile(profile_name, str(ROOT_DIR / "data" / "features"))
+        else:
+            default_path = ROOT_DIR / "data" / "features" / "style_profile.json"
+            if default_path.exists():
+                with open(default_path) as f:
+                    style_profile = json.load(f)
+        
+        if generate_full_song:
+            result = lyrics_gen.generate_full_song(structure=structure, style_profile=style_profile)
+            return jsonify({
+                'lyrics': result['full_lyrics'],
+                'sections': result['sections'],
+                'structure': result['structure']
+            })
+        elif section_type:
+            lyrics = lyrics_gen.generate_section(section_type, style_profile=style_profile)
+            return jsonify({
+                'lyrics': lyrics,
+                'section_type': section_type
+            })
+        else:
+            keywords = style_profile.get('lyrics', {}).get('top_keywords', []) if style_profile else None
+            lyrics = lyrics_gen.generate_lyrics(
+                num_lines=num_lines,
+                rhyme_scheme=rhyme_scheme,
+                keywords=keywords
+            )
+            return jsonify({
+                'lyrics': lyrics,
+                'num_lines': num_lines,
+                'rhyme_scheme': rhyme_scheme
+            })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ============================================================================
+# ORIGINAL PIPELINE ROUTES
+# ============================================================================
 
 @pipeline_bp.route('/download', methods=['POST'])
 def start_download():
