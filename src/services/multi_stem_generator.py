@@ -744,6 +744,41 @@ class MultiStemGenerator:
         
         return mixed
     
+    def _prepare_audio_for_export(self, audio: Union[np.ndarray, List[float]]) -> np.ndarray:
+        """Ensure audio is in a soundfile-compatible shape and dtype."""
+        if audio is None:
+            return np.zeros((1,), dtype=np.float32)
+        
+        audio_array = np.asarray(audio)
+        if audio_array.size == 0:
+            return np.zeros((1,), dtype=np.float32)
+        
+        if np.iscomplexobj(audio_array):
+            audio_array = audio_array.real
+        
+        audio_array = np.nan_to_num(audio_array, nan=0.0, posinf=0.0, neginf=0.0)
+        
+        if audio_array.ndim == 0:
+            audio_array = np.zeros((1,), dtype=np.float32)
+        elif audio_array.ndim == 1:
+            audio_array = audio_array.astype(np.float32)
+        elif audio_array.ndim == 2:
+            if audio_array.shape[0] not in (1, 2) and audio_array.shape[1] in (1, 2):
+                audio_array = audio_array.T
+            if audio_array.shape[0] == 1:
+                audio_array = audio_array[0]
+            elif audio_array.shape[0] == 2:
+                audio_array = audio_array.T
+            else:
+                audio_array = audio_array[:2].T
+            audio_array = audio_array.astype(np.float32)
+        else:
+            audio_array = audio_array.reshape(-1).astype(np.float32)
+        
+        if audio_array.ndim == 1:
+            return audio_array.astype(np.float32)
+        return audio_array.astype(np.float32)
+    
     def generate(
         self,
         prompt: str,
@@ -808,13 +843,14 @@ class MultiStemGenerator:
             
             if save_individual_stems:
                 stem_file = output_path / f"stem_{stem_type}_{timestamp}.wav"
-                
-                if audio.ndim == 2:
-                    audio_to_save = audio.T
-                else:
-                    audio_to_save = audio
-                
-                sf.write(stem_file, audio_to_save, 32000)
+                audio_to_save = self._prepare_audio_for_export(audio)
+                sf.write(
+                    stem_file,
+                    audio_to_save,
+                    32000,
+                    format="WAV",
+                    subtype="PCM_16"
+                )
                 stem_paths[stem_type] = str(stem_file)
                 print(f"✅ Saved {stem_type} stem")
         
@@ -823,12 +859,14 @@ class MultiStemGenerator:
         
         mixed_file = output_path / f"mixed_{timestamp}.wav"
         
-        if mixed_audio.ndim == 2:
-            mixed_to_save = mixed_audio.T
-        else:
-            mixed_to_save = mixed_audio
-        
-        sf.write(mixed_file, mixed_to_save, 32000)
+        mixed_to_save = self._prepare_audio_for_export(mixed_audio)
+        sf.write(
+            mixed_file,
+            mixed_to_save,
+            32000,
+            format="WAV",
+            subtype="PCM_16"
+        )
         
         metadata = {
             'prompt': prompt,
