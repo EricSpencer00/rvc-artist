@@ -74,3 +74,4 @@ htmlcov/
 *.tmp
 *.log
 *.cache
+scripts/install_musicgen.sh

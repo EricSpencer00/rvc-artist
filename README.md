@@ -56,18 +56,24 @@ git clone <your-repo-url>
 cd rvc-artist
 ```
 
-2. **Create a virtual environment:**
+2. **Create a virtual environment (Python 3.11 recommended):**
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 ```
 
-3. **Install dependencies:**
+3. **Install the base dependencies:**
 ```bash
 pip install -r requirements.txt
 ```
 
-4. **Configure environment variables:**
+4. **Install PyTorch + AudioCraft toolchain:**
+```bash
+./scripts/install_musicgen.sh
+```
+This script installs the pinned PyTorch CPU wheels, AudioCraft, Whisper, Demucs, and rebuilds `xformers` with the correct flags (Apple Silicon friendly). Make sure your virtual environment is active before running it.
+
+5. **Configure environment variables:**
 ```bash
 cp .env.example .env
 ```
@@ -80,12 +86,18 @@ YOUTUBE_PLAYLIST_URL=https://youtube.com/playlist?list=YOUR_PLAYLIST_ID
 
 Get a Genius API token from: https://genius.com/api-clients
 
-5. **Run the application:**
+6. **(Optional) Verify the pipeline:**
+```bash
+python test_pipeline.py
+```
+This re-runs analysis on the sample YEAT tracks and generates a short MusicGen clip to confirm everything works end-to-end.
+
+7. **Run the application:**
 ```bash
 python app.py
 ```
 
-6. **Open your browser:**
+8. **Open your browser:**
 Navigate to `http://localhost:5000`
 
 ## Usage
