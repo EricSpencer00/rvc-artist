@@ -1,409 +1,205 @@
-# RVC Artist - AI Music Generation Pipeline
+# RVC Artist - Multi-Stem Music Generation
 
-🎵 An AI-powered tool for creating music in an artist's style by analyzing their existing catalog and generating new songs.
+🎵 High-quality AI music generation using multi-stem synthesis. Generate trap/rap music with professional mixing and mastering using Suno v4.5+ style features.
+
+## Quick Start
+
+```bash
+# Activate virtual environment
+source .venv311/bin/activate
+
+# Generate music
+python3 app.py generate --prompt "aggressive trap beat, heavy 808s, dark atmosphere"
+
+# Analyze audio style
+python3 app.py analyze --directory data/audio
+
+# Generate lyrics
+python3 app.py lyrics --section verse
+
+# Run tests
+python3 app.py test
+
+# Show system info
+python3 app.py info
+```
 
 ## Features
 
-- **YouTube Playlist Downloader**: Download audio from YouTube playlists
-- **Audio Transcription**: Uses OpenAI Whisper for accurate vocal transcription
-- **Lyrics Scraping**: Fetches official lyrics from Genius
-- **Lyrics Alignment**: Aligns transcriptions with official lyrics using fuzzy matching
-- **Style Analysis**: Extracts musical features (tempo, key, energy, spectral characteristics)
-- **Music Generation**: Creates new songs using Meta's AudioCraft/MusicGen based on learned style
+- **🎼 Multi-Stem Generation**: Generate vocals, drums, bass, melodies separately then mix
+### Install Dependencies
+
+```bash
+# Create virtual environment (if not exists)
+python3 -m venv .venv311
+source .venv311/bin/activate
+
+# Install requirements
+pip install -r requirements.txt
+
+# Install AudioCraft and PyTorch
+pip install audiocraft torch torchaudio
+```
+
+## Usage
+
+### Generate Music
+
+```bash
+source .venv311/bin/activate
+
+# Basic generation
+python3 app.py generate --prompt "aggressive trap beat, 808s"
+
+# With all options
+python3 app.py generate \
+  --prompt "melodic rap, emotional vibes" \
+  --duration 30 \
+  --artist "Yeat" \
+  --stems "drums,bass,melody_1,melody_2" \
+  --no-parallel  # Disable for slower machines
+```
+
+### Analyze Audio
+
+```bash
+python3 app.py analyze --directory data/audio
+```
+
+Extracts tempo, key, energy, and creates style profile at `data/features/style_profile.json`.
+
+### Generate Lyrics
+
+```bash
+python3 app.py lyrics --section verse --length 16 --scheme aabb
+```
+
+Sections: `intro`, `verse`, `chorus`, `bridge`, `outro`
+Schemes: `aabb`, `abab`, `natural`
+
+### Download from YouTube
+
+```bash
+python3 app.py download --url "https://youtube.com/watch?v=..."
+```
+
+### Run Tests
+
+```bash
+python3 app.py test
+```
+
+Integration tests verify all components work correctly.
+
+### System Info
+
+```bash
+python3 app.py info
+```
+
+Shows installed dependencies and available resources.
 
 ## Architecture
 
 ```
-RVC Artist Pipeline
-├── Download → YouTube audio extraction
-├── Transcribe → Whisper-based transcription
-├── Scrape Lyrics → Genius API integration
-├── Align → Fuzzy matching alignment
-├── Analyze → Librosa feature extraction
-└── Generate → AudioCraft music generation
+MultiStemGenerator
+├── StemProcessor          (EQ, compression, reverb per stem)
+├── MasteringProcessor     (LUFS normalization, stereo width)
+└── VocalGenerator         (Bark TTS synthesis)
 ```
 
-## Installation
+### Generation Process
 
-### Prerequisites
+1. **Individual Stem Generation**: Each stem (drums, bass, melody) generated separately
+2. **Per-Stem Processing**: EQ, compression, reverb applied
+3. **Mixing**: Stems combined with optimized levels
+4. **Mastering**: LUFS normalization, limiting, stereo widening
+5. **Export**: 32kHz WAV files saved
 
-- Python 3.9 or higher
-- FFmpeg (for audio processing)
-- 8GB+ RAM recommended
-- GPU optional but recommended for music generation
+## Configuration
 
-### Install FFmpeg
+### Default Settings
 
-**macOS:**
+- Model: `large` (AudioCraft/MusicGen)
+- Processing: Enabled
+- Mastering: Enabled
+- Parallel generation: Enabled (2 stems max)
+
+### For Lower-RAM Machines
+
 ```bash
-brew install ffmpeg
-```
-
-**Ubuntu/Debian:**
-```bash
-sudo apt update
-sudo apt install ffmpeg
-```
-
-**Windows:**
-Download from [ffmpeg.org](https://ffmpeg.org/download.html)
-
-### Setup
-
-1. **Clone the repository:**
-```bash
-git clone <your-repo-url>
-cd rvc-artist
-```
-
-2. **Create a virtual environment (Python 3.11 recommended):**
-```bash
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-```
-
-3. **Install the base dependencies:**
-```bash
-pip install -r requirements.txt
-```
-
-4. **Install PyTorch + AudioCraft toolchain:**
-```bash
-./scripts/install_musicgen.sh
-```
-This script installs the pinned PyTorch CPU wheels, AudioCraft, Whisper, Demucs, and rebuilds `xformers` with the correct flags (Apple Silicon friendly). Make sure your virtual environment is active before running it.
-
-5. **Configure environment variables:**
-```bash
-cp .env.example .env
-```
-
-Edit `.env` and add your API keys:
-```env
-GENIUS_API_TOKEN=your_genius_api_token_here
-YOUTUBE_PLAYLIST_URL=https://youtube.com/playlist?list=YOUR_PLAYLIST_ID
-```
-
-Get a Genius API token from: https://genius.com/api-clients
-
-6. **(Optional) Verify the pipeline:**
-```bash
-python test_pipeline.py
-```
-This re-runs analysis on the sample YEAT tracks and generates a short MusicGen clip to confirm everything works end-to-end.
-
-7. **Run the application:**
-```bash
-python app.py
-```
-
-8. **Open your browser:**
-Navigate to `http://localhost:5000`
-
-## Usage
-
-### Web Interface
-
-The easiest way to use RVC Artist is through the web interface:
-
-1. Open `http://localhost:5000` in your browser
-2. Enter a YouTube playlist URL
-3. Enter the artist name for lyrics matching
-4. Click "Run Full Pipeline" or run individual steps
-5. Monitor progress in real-time
-6. Generate new music with custom prompts
-
-### API Endpoints
-
-#### Pipeline Operations
-
-**Start Download:**
-```bash
-curl -X POST http://localhost:5000/pipeline/download \
-  -H "Content-Type: application/json" \
-  -d '{"playlist_url": "https://youtube.com/playlist?list=..."}'
-```
-
-**Start Transcription:**
-```bash
-curl -X POST http://localhost:5000/pipeline/transcribe
-```
-
-**Scrape Lyrics:**
-```bash
-curl -X POST http://localhost:5000/pipeline/scrape-lyrics \
-  -H "Content-Type: application/json" \
-  -d '{"artist_name": "Artist Name"}'
-```
-
-**Align Lyrics:**
-```bash
-curl -X POST http://localhost:5000/pipeline/align
-```
-
-**Analyze Style:**
-```bash
-curl -X POST http://localhost:5000/pipeline/analyze
-```
-
-**Generate Music:**
-```bash
-curl -X POST http://localhost:5000/pipeline/generate \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "upbeat pop song", "duration": 30}'
-```
-
-**Run Full Pipeline:**
-```bash
-curl -X POST http://localhost:5000/pipeline/run-full \
-  -H "Content-Type: application/json" \
-  -d '{
-    "playlist_url": "https://youtube.com/playlist?list=...",
-    "artist_name": "Artist Name",
-    "prompt": "energetic pop song",
-    "duration": 30
-  }'
-```
-
-#### Data Endpoints
-
-**List Downloaded Songs:**
-```bash
-curl http://localhost:5000/api/songs
-```
-
-**List Transcripts:**
-```bash
-curl http://localhost:5000/api/transcripts
-```
-
-**List Lyrics:**
-```bash
-curl http://localhost:5000/api/lyrics
-```
-
-**List Generated Songs:**
-```bash
-curl http://localhost:5000/api/generated
-```
-
-**Get Pipeline Status:**
-```bash
-curl http://localhost:5000/pipeline/status
+python3 app.py generate \
+  --prompt "..." \
+  --no-parallel  # Sequential generation (slower)
 ```
 
 ## Project Structure
 
 ```
 rvc-artist/
-├── app.py                      # Application entry point
-├── requirements.txt            # Python dependencies
-├── .env                        # Environment configuration
-├── frontend/
-│   ├── templates/
-│   │   └── index.html         # Web UI
-│   └── static/                # Static assets
+├── app.py                    # Main CLI
+├── requirements.txt          # Dependencies
 ├── src/
-│   ├── app.py                 # Flask application factory
-│   ├── routes/
-│   │   ├── api.py            # API routes
-│   │   └── pipeline.py       # Pipeline orchestration
 │   └── services/
-│       ├── youtube_downloader.py   # YouTube audio download
-│       ├── transcriber.py          # Whisper transcription
-│       ├── lyrics_scraper.py       # Genius lyrics scraping
-│       ├── lyrics_aligner.py       # Lyrics alignment
-│       ├── style_analyzer.py       # Musical feature analysis
-│       └── music_generator.py      # MusicGen generation
-├── data/                      # Generated data (gitignored)
-│   ├── audio/
-│   │   ├── raw/              # Downloaded audio
-│   │   ├── vocals/           # Separated vocals
-│   │   └── instrumentals/    # Separated instrumentals
-│   ├── transcripts/          # Whisper transcriptions
-│   ├── lyrics/               # Scraped lyrics
-│   ├── aligned/              # Aligned lyrics + timestamps
-│   └── features/             # Extracted musical features
-├── models/                    # Model checkpoints (gitignored)
-└── output/                    # Generated songs (gitignored)
-    └── generated/
+│       ├── multi_stem_generator.py    # Main synthesis engine
+│       ├── style_analyzer.py          # Feature extraction
+│       ├── lyrics_generator.py        # Lyric generation
+│       ├── vocal_generator.py         # Vocal synthesis
+│       └── ...                        # Other services
+├── tests/
+│   └── test_battle_pipeline.py        # Integration tests
+├── data/
+│   ├── audio/              # Downloaded audio
+│   ├── features/           # Style profiles
+│   └── transcripts/        # Transcriptions
+└── output/
+    └── generated/          # Generated audio
 ```
 
-## Services Documentation
+## Performance
 
-### YouTubeDownloader
+### Hardware Recommendations
 
-Downloads audio from YouTube videos and playlists.
+| RAM | Performance | Config |
+|-----|-------------|--------|
+| 16GB | Slow | Single stem, small model |
+| 32GB | Good | Single stem, large model |
+| 64GB+ | Fast | Parallel (2-4 stems), large model |
 
-```python
-from src.services.youtube_downloader import YouTubeDownloader
+### Generation Time (30s song, large model, 64GB RAM)
 
-downloader = YouTubeDownloader(output_dir="./data/audio/raw")
-result = downloader.download_playlist(playlist_url)
-```
-
-### AudioTranscriber
-
-Transcribes audio using OpenAI Whisper.
-
-```python
-from src.services.transcriber import AudioTranscriber
-
-transcriber = AudioTranscriber(model_size="base")
-result = transcriber.transcribe("audio.mp3")
-```
-
-### LyricsScraper
-
-Scrapes lyrics from Genius.
-
-```python
-from src.services.lyrics_scraper import LyricsScraper
-
-scraper = LyricsScraper(api_token="your_token")
-lyrics = scraper.search_and_get_lyrics(
-    song_title="Song Name",
-    artist_name="Artist Name"
-)
-```
-
-### LyricsAligner
-
-Aligns transcriptions with official lyrics.
-
-```python
-from src.services.lyrics_aligner import LyricsAligner
-
-aligner = LyricsAligner()
-aligned = aligner.align(transcript, lyrics_data)
-```
-
-### StyleAnalyzer
-
-Analyzes musical features using librosa.
-
-```python
-from src.services.style_analyzer import StyleAnalyzer
-
-analyzer = StyleAnalyzer()
-features = analyzer.analyze("audio.mp3")
-profile = analyzer.create_style_profile([features1, features2])
-```
-
-### MusicGenerator
-
-Generates music using AudioCraft/MusicGen.
-
-```python
-from src.services.music_generator import MusicGenerator
-
-generator = MusicGenerator(model_size="small")
-output_path = generator.generate(
-    prompt="upbeat pop song",
-    duration=30,
-    style_profile=profile
-)
-```
-
-## Configuration
-
-### Environment Variables
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `GENIUS_API_TOKEN` | Genius API token for lyrics | Yes |
-| `YOUTUBE_PLAYLIST_URL` | Default playlist URL | No |
-| `FLASK_HOST` | Server host (default: 0.0.0.0) | No |
-| `FLASK_PORT` | Server port (default: 5000) | No |
-| `FLASK_DEBUG` | Debug mode (default: True) | No |
-
-### Model Sizes
-
-**Whisper Models:**
-- `tiny` - Fastest, least accurate (~1GB)
-- `base` - Good balance (default, ~1GB)
-- `small` - Better accuracy (~2GB)
-- `medium` - High accuracy (~5GB)
-- `large` - Best accuracy (~10GB)
-
-**MusicGen Models:**
-- `small` - Fastest generation (300M params)
-- `medium` - Better quality (1.5B params)
-- `large` - Best quality (3.3B params)
-- `melody` - Supports melody conditioning
+- Sequential (1 stem): ~120s
+- Parallel (2 stems): ~65s (~2x speedup)
+- Parallel (4 stems): ~45s (limits diminish)
 
 ## Troubleshooting
 
-### FFmpeg not found
+### ModuleNotFoundError: torch
 ```bash
-# macOS
-brew install ffmpeg
-
-# Ubuntu
-sudo apt install ffmpeg
+pip install torch torchaudio
 ```
 
-### CUDA/GPU issues
-```bash
-# For CPU-only (slower but works everywhere)
-pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
-```
+### "Unable to find python bindings" (DCGM)
+Harmless warning on non-NVIDIA systems. Can be ignored.
 
-### Memory errors
-- Use smaller models (Whisper `tiny` or `base`, MusicGen `small`)
-- Reduce batch sizes
-- Process fewer songs at once
+### Slow generation
+- Check `--no-parallel` is not set
+- Verify `.venv311` has all dependencies
+- Reduce duration or stem count
 
-### Genius API errors
-- Verify your API token is correct
-- Check rate limits (typically 1 request/second)
-- Ensure artist/song names are spelled correctly
+### Out of memory
+- Use `--no-parallel` for sequential generation
+- Reduce stem count
+- Use smaller model size
 
-## Performance Tips
+## License
 
-1. **Use GPU**: Significantly faster for transcription and generation
-2. **Adjust model sizes**: Trade accuracy for speed as needed
-3. **Batch processing**: Process multiple files together when possible
-4. **Cache results**: Results are saved to avoid reprocessing
+MIT
 
-## Legal & Ethics
+## Contact
 
-- **Copyright**: Only use with content you have rights to analyze
-- **Genius Terms**: Comply with Genius API terms of service
-- **YouTube Terms**: Respect YouTube's terms of service
-- **Generated Content**: AI-generated music may have licensing implications
+For issues and questions, please open an issue on GitHub.
 
-## Dependencies
-
-### Core
-- Flask - Web framework
-- yt-dlp - YouTube downloading
-- openai-whisper - Audio transcription
-- librosa - Audio analysis
-- audiocraft - Music generation
-
-### Audio Processing
-- pydub - Audio manipulation
-- soundfile - Audio I/O
-- scipy - Scientific computing
-
-### AI/ML
-- torch - PyTorch framework
-- transformers - HuggingFace models
-- accelerate - Model optimization
-
-### Utilities
-- lyricsgenius - Genius API client
-- beautifulsoup4 - HTML parsing
-- fuzzywuzzy - Fuzzy string matching
-
-## Contributing
-
-Contributions welcome! Please:
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
 
 ## License
 
