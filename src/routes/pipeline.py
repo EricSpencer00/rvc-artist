@@ -53,6 +53,373 @@ def clear_logs():
 
 
 # ============================================================================
+# RVC VOICE CONVERSION ROUTES
+# ============================================================================
+
+@pipeline_bp.route('/rvc/train', methods=['POST'])
+def rvc_train_model():
+    """Train an RVC model on voice samples."""
+    from src.services.rvc_converter import RVCVoiceConverter
+    
+    data = request.json or {}
+    voice_samples_dir = data.get('voice_samples_dir')
+    model_name = data.get('model_name', 'yeat')
+    
+    if not voice_samples_dir:
+        return jsonify({'error': 'voice_samples_dir required'}), 400
+    
+    voice_dir = Path(voice_samples_dir)
+    if not voice_dir.exists():
+        return jsonify({'error': f'Directory not found: {voice_samples_dir}'}), 404
+    
+    def train_task():
+        pipeline_state['status'] = 'running'
+        pipeline_state['current_step'] = 'rvc_train'
+        pipeline_state['progress'] = 0
+        pipeline_state['error'] = None
+        pipeline_state['started_at'] = datetime.now().isoformat()
+        
+        try:
+            converter = RVCVoiceConverter()
+            log_message(f"Training RVC model '{model_name}' on voice samples from {voice_samples_dir}")
+            
+            result = converter.train_model(
+                voice_samples_dir=voice_samples_dir,
+                model_name=model_name,
+                epochs=20,
+                batch_size=8
+            )
+            
+            pipeline_state['progress'] = 100
+            pipeline_state['status'] = 'completed'
+            pipeline_state['completed_at'] = datetime.now().isoformat()
+            log_message(f"✓ Model trained: {result['message']}")
+            log_message(f"Processed {result['trained_samples']} samples")
+            
+        except Exception as e:
+            pipeline_state['status'] = 'error'
+            pipeline_state['error'] = str(e)
+            log_message(f"Error training model: {str(e)}")
+            import traceback
+            log_message(traceback.format_exc())
+    
+    thread = threading.Thread(target=train_task)
+    thread.start()
+    
+    return jsonify({
+        'status': 'started',
+        'message': f'Training RVC model "{model_name}" in background'
+    })
+
+
+@pipeline_bp.route('/rvc/models', methods=['GET'])
+def list_rvc_models():
+    """List available RVC models."""
+    from src.services.rvc_converter import RVCVoiceConverter
+    
+    converter = RVCVoiceConverter()
+    models = converter.list_models()
+    
+    return jsonify({
+        'models': models,
+        'count': len(models)
+    })
+
+
+@pipeline_bp.route('/rvc/convert', methods=['POST'])
+def rvc_convert_voice():
+    """Apply voice conversion to audio using trained RVC model."""
+    from src.services.rvc_converter import RVCVoiceConverter
+    from werkzeug.utils import secure_filename
+    
+    # Get model name and settings
+    data = request.form
+    model_name = data.get('model_name', 'yeat')
+    pitch_shift = int(data.get('pitch_shift', 0))
+    
+    # Check for audio file
+    if 'audio_file' not in request.files:
+        return jsonify({'error': 'No audio file provided'}), 400
+    
+    audio_file = request.files['audio_file']
+    
+    if audio_file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    
+    # Save uploaded file
+    upload_dir = ROOT_DIR / "data" / "uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    
+    audio_filename = secure_filename(audio_file.filename)
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    audio_filename = f"{timestamp}_{audio_filename}"
+    audio_path = upload_dir / audio_filename
+    
+    audio_file.save(str(audio_path))
+    
+    def convert_task():
+        pipeline_state['status'] = 'running'
+        pipeline_state['current_step'] = 'rvc_convert'
+        pipeline_state['progress'] = 0
+        pipeline_state['error'] = None
+        pipeline_state['started_at'] = datetime.now().isoformat()
+        
+        try:
+            converter = RVCVoiceConverter()
+            output_dir = ROOT_DIR / "output" / "generated"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            
+            output_filename = f"converted_{model_name}_{timestamp}.wav"
+            output_path = output_dir / output_filename
+            
+            log_message(f"Converting voice using model: {model_name}")
+            log_message(f"Input file: {audio_filename}")
+            log_message(f"Pitch shift: {pitch_shift} semitones")
+            
+            pipeline_state['progress'] = 20
+            
+            result = converter.convert_voice(
+                input_audio_path=str(audio_path),
+                model_name=model_name,
+                output_path=str(output_path),
+                pitch_shift=pitch_shift
+            )
+            
+            pipeline_state['progress'] = 100
+            pipeline_state['status'] = 'completed'
+            pipeline_state['completed_at'] = datetime.now().isoformat()
+            log_message(f"✓ Voice conversion complete!")
+            log_message(f"Output: {output_filename}")
+            log_message(f"Duration: {result['duration']:.2f} seconds")
+            
+        except Exception as e:
+            pipeline_state['status'] = 'error'
+            pipeline_state['error'] = str(e)
+            log_message(f"Error converting voice: {str(e)}")
+            import traceback
+            log_message(traceback.format_exc())
+    
+    thread = threading.Thread(target=convert_task)
+    thread.start()
+    
+    return jsonify({
+        'status': 'started',
+        'message': f'Converting voice using model "{model_name}"',
+        'uploaded_file': audio_filename
+    })
+
+
+@pipeline_bp.route('/rvc/separate-stems', methods=['POST'])
+def separate_stems():
+    """Separate vocal and instrumental stems from audio."""
+    from src.services.stem_separator import StemSeparator
+    from werkzeug.utils import secure_filename
+    
+    # Check for audio file
+    if 'audio_file' not in request.files:
+        return jsonify({'error': 'No audio file provided'}), 400
+    
+    audio_file = request.files['audio_file']
+    
+    if audio_file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    
+    # Save uploaded file
+    upload_dir = ROOT_DIR / "data" / "uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    
+    audio_filename = secure_filename(audio_file.filename)
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    audio_filename = f"{timestamp}_{audio_filename}"
+    audio_path = upload_dir / audio_filename
+    
+    audio_file.save(str(audio_path))
+    
+    def separate_task():
+        pipeline_state['status'] = 'running'
+        pipeline_state['current_step'] = 'separate_stems'
+        pipeline_state['progress'] = 0
+        pipeline_state['error'] = None
+        pipeline_state['started_at'] = datetime.now().isoformat()
+        
+        try:
+            separator = StemSeparator()
+            output_dir = ROOT_DIR / "data" / "stems" / timestamp
+            output_dir.mkdir(parents=True, exist_ok=True)
+            
+            log_message(f"Separating stems from: {audio_filename}")
+            
+            pipeline_state['progress'] = 30
+            
+            result = separator.separate_stems(
+                audio_path=str(audio_path),
+                output_dir=str(output_dir),
+                model='htdemucs'
+            )
+            
+            pipeline_state['progress'] = 100
+            pipeline_state['status'] = 'completed'
+            pipeline_state['completed_at'] = datetime.now().isoformat()
+            log_message(f"✓ Stem separation complete!")
+            log_message(f"Vocal: {Path(result['vocal_file']).name}")
+            log_message(f"Instrumental: {Path(result['instrumental_file']).name}")
+            log_message(f"Duration: {result['duration']:.2f} seconds")
+            
+        except Exception as e:
+            pipeline_state['status'] = 'error'
+            pipeline_state['error'] = str(e)
+            log_message(f"Error separating stems: {str(e)}")
+            import traceback
+            log_message(traceback.format_exc())
+    
+    thread = threading.Thread(target=separate_task)
+    thread.start()
+    
+    return jsonify({
+        'status': 'started',
+        'message': 'Separating vocal and instrumental stems',
+        'uploaded_file': audio_filename
+    })
+
+
+@pipeline_bp.route('/rvc/full-conversion', methods=['POST'])
+def rvc_full_conversion():
+    """
+    Full Yeat voice conversion pipeline:
+    1. Separate vocals and instrumental
+    2. Convert vocals to Yeat voice
+    3. Mix back together
+    """
+    from src.services.stem_separator import StemSeparator
+    from src.services.rvc_converter import RVCVoiceConverter
+    from werkzeug.utils import secure_filename
+    
+    # Check for audio file
+    if 'audio_file' not in request.files:
+        return jsonify({'error': 'No audio file provided'}), 400
+    
+    audio_file = request.files['audio_file']
+    
+    if audio_file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    
+    model_name = request.form.get('model_name', 'yeat')
+    pitch_shift = int(request.form.get('pitch_shift', 0))
+    vocal_level_db = float(request.form.get('vocal_level_db', 0.0))
+    
+    # Save uploaded file
+    upload_dir = ROOT_DIR / "data" / "uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    
+    audio_filename = secure_filename(audio_file.filename)
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    audio_filename = f"{timestamp}_{audio_filename}"
+    audio_path = upload_dir / audio_filename
+    
+    audio_file.save(str(audio_path))
+    
+    def full_conversion_task():
+        pipeline_state['status'] = 'running'
+        pipeline_state['current_step'] = 'full_conversion'
+        pipeline_state['progress'] = 0
+        pipeline_state['error'] = None
+        pipeline_state['started_at'] = datetime.now().isoformat()
+        
+        try:
+            separator = StemSeparator()
+            converter = RVCVoiceConverter()
+            
+            output_dir = ROOT_DIR / "output" / "generated"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            
+            stems_dir = ROOT_DIR / "data" / "stems" / timestamp
+            stems_dir.mkdir(parents=True, exist_ok=True)
+            
+            log_message(f"Starting full Yeat voice conversion for: {audio_filename}")
+            log_message(f"Model: {model_name}")
+            
+            # Step 1: Separate stems
+            log_message("Step 1/4: Separating vocal and instrumental stems...")
+            pipeline_state['progress'] = 15
+            
+            separation_result = separator.separate_stems(
+                audio_path=str(audio_path),
+                output_dir=str(stems_dir),
+                model='htdemucs'
+            )
+            
+            vocal_file = separation_result['vocal_file']
+            instrumental_file = separation_result['instrumental_file']
+            
+            log_message(f"✓ Stems separated")
+            
+            # Step 2: Convert voice
+            log_message("Step 2/4: Converting voice to Yeat...")
+            pipeline_state['progress'] = 50
+            
+            converted_filename = f"converted_vocal_{timestamp}.wav"
+            converted_path = stems_dir / converted_filename
+            
+            conversion_result = converter.convert_voice(
+                input_audio_path=vocal_file,
+                model_name=model_name,
+                output_path=str(converted_path),
+                pitch_shift=pitch_shift
+            )
+            
+            log_message(f"✓ Voice converted")
+            
+            # Step 3: Mix stems
+            log_message("Step 3/4: Mixing vocal and instrumental...")
+            pipeline_state['progress'] = 75
+            
+            final_filename = f"yeat_{Path(audio_filename).stem}_{timestamp}.wav"
+            final_path = output_dir / final_filename
+            
+            mix_result = separator.mix_stems(
+                vocal_path=str(converted_path),
+                instrumental_path=instrumental_file,
+                output_path=str(final_path),
+                vocal_level_db=vocal_level_db,
+                instrumental_level_db=0.0
+            )
+            
+            log_message(f"✓ Stems mixed")
+            
+            # Complete
+            pipeline_state['progress'] = 100
+            pipeline_state['status'] = 'completed'
+            pipeline_state['completed_at'] = datetime.now().isoformat()
+            log_message(f"✓ Full conversion complete!")
+            log_message(f"Output: {final_filename}")
+            log_message(f"Duration: {mix_result['duration']:.2f} seconds")
+            log_message(f"Download: /output/generated/{final_filename}")
+            
+        except Exception as e:
+            pipeline_state['status'] = 'error'
+            pipeline_state['error'] = str(e)
+            log_message(f"Error in full conversion: {str(e)}")
+            import traceback
+            log_message(traceback.format_exc())
+    
+    thread = threading.Thread(target=full_conversion_task)
+    thread.start()
+    
+    return jsonify({
+        'status': 'started',
+        'message': f'Converting to Yeat voice - this may take a few minutes',
+        'model': model_name,
+        'uploaded_file': audio_filename
+    })
+
+
+# ============================================================================
+# LEGACY UPLOAD ROUTES (DEPRECATED)
+# ============================================================================
+
+
+
+# ============================================================================
 # STYLE PROFILE MANAGEMENT ROUTES
 # ============================================================================
 

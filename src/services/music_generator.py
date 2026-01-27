@@ -98,11 +98,14 @@ class MusicGenerator:
                 self.model = MusicGen.get_pretrained(self.model_size, device=self.device)
                 
             print(f"✅ MusicGen {self.model_size} model loaded successfully on {self.device}")
-        except ImportError:
-            print("AudioCraft not available. Install with: pip install audiocraft")
+        except ImportError as e:
+            print(f"AudioCraft not available. Install with: pip install audiocraft")
+            print(f"(ImportError: {e})")
             self.model = None
         except Exception as e:
             print(f"Error loading MusicGen model: {e}")
+            import traceback
+            traceback.print_exc()
             self.model = None
     
     def style_to_prompt(self, style_profile: Optional[Dict[str, Any]] = None, artist_name: Optional[str] = None) -> str:

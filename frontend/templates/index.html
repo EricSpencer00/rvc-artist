@@ -298,6 +298,77 @@
         <h1>🎵 RVC Artist</h1>
         <p class="subtitle">AI-Powered Music Generation Pipeline</p>
 
+        <!-- RVC Voice Conversion Card -->
+        <div class="card">
+            <h2>🎤 Yeat Voice Conversion - RVC</h2>
+            <p style="color: #666; margin-bottom: 15px;">
+                Upload an MP3 with any voice. We'll extract the vocals, convert them to Yeat's voice using RVC, and mix them back with the instrumental.
+            </p>
+            
+            <div style="background: #f0f0f0; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                <p style="margin: 0; color: #333; font-size: 14px;">
+                    <strong>How it works:</strong>
+                </p>
+                <ol style="margin: 10px 0 0 20px; color: #555; font-size: 14px;">
+                    <li>Upload your MP3 (vocals + instrumental mixed)</li>
+                    <li>We separate the vocals from the instrumental</li>
+                    <li>Convert the vocals to Yeat's voice using RVC</li>
+                    <li>Mix them back together</li>
+                </ol>
+            </div>
+            
+            <div class="input-group">
+                <label for="rvcAudioFile">Upload MP3 File:</label>
+                <input type="file" id="rvcAudioFile" accept=".mp3,.wav,.m4a" style="padding: 8px;">
+            </div>
+            
+            <div class="input-group">
+                <label for="rvcModelSelect">RVC Model:</label>
+                <select id="rvcModelSelect" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px;">
+                    <option value="yeat">Yeat (Default)</option>
+                    <option value="carti">Playboi Carti</option>
+                    <option value="other">Other Models...</option>
+                </select>
+            </div>
+            
+            <div class="input-group">
+                <label for="rvcPitchShift">Pitch Shift (semitones):</label>
+                <input type="number" id="rvcPitchShift" value="0" min="-12" max="12" style="width: 100%; padding: 10px;">
+            </div>
+            
+            <div class="input-group">
+                <label for="rvcVocalLevel">Vocal Level (dB):</label>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <input type="range" id="rvcVocalLevel" min="-12" max="12" step="1" value="0" style="flex: 1;">
+                    <span id="rvcVocalLevelValue" style="font-weight: bold; color: #667eea; min-width: 40px;">0 dB</span>
+                </div>
+            </div>
+            
+            <button onclick="rvcFullConversion()" class="button-secondary" style="width: 100%;">
+                🎵 Convert to Yeat Voice
+            </button>
+
+            <div class="progress-bar" id="rvcProgressBar">
+                <div class="progress-fill" id="rvcProgressFill">0%</div>
+            </div>
+
+            <div class="status" id="rvcStatus"></div>
+        </div>
+
+        <!-- RVC Models Management Card -->
+        <div class="card">
+            <h2>📚 RVC Models</h2>
+            <p style="color: #666; margin-bottom: 15px;">Trained voice models available for conversion.</p>
+            
+            <button onclick="loadRvcModels()" class="button-secondary" style="width: 100%; margin-bottom: 15px;">
+                Refresh Models
+            </button>
+            
+            <div id="rvcModelsList" style="background: #f9f9f9; padding: 15px; border-radius: 8px;">
+                <div style="color: #999; text-align: center;">Loading models...</div>
+            </div>
+        </div>
+
         <!-- Configuration Card -->
         <div class="card">
             <h2>⚙️ Configuration</h2>
@@ -642,6 +713,142 @@
 
         function showStatus(message, type) {
             const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = 'status active ' + type;
+        }
+
+        // RVC Voice Conversion Functions
+        document.addEventListener('DOMContentLoaded', () => {
+            const vocalLevelSlider = document.getElementById('rvcVocalLevel');
+            const vocalLevelValue = document.getElementById('rvcVocalLevelValue');
+            
+            if (vocalLevelSlider) {
+                vocalLevelSlider.addEventListener('input', (e) => {
+                    const val = parseFloat(e.target.value);
+                    vocalLevelValue.textContent = (val > 0 ? '+' : '') + val + ' dB';
+                });
+            }
+            
+            // Load models on page load
+            loadRvcModels();
+        });
+
+        async function loadRvcModels() {
+            try {
+                const response = await fetch('/pipeline/rvc/models');
+                const data = await response.json();
+                
+                const modelsList = document.getElementById('rvcModelsList');
+                
+                if (data.models && data.models.length > 0) {
+                    modelsList.innerHTML = data.models.map(model => `
+                        <div style="padding: 10px; background: white; margin-bottom: 8px; border-radius: 6px; border-left: 3px solid #667eea;">
+                            <div style="font-weight: bold; color: #333;">${model.model_name}</div>
+                            <div style="font-size: 12px; color: #666;">
+                                Samples: ${model.trained_samples} | Sample Rate: ${model.sample_rate} Hz
+                            </div>
+                            <div style="font-size: 12px; color: #999;">
+                                Created: ${new Date(model.created_at).toLocaleDateString()}
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    modelsList.innerHTML = '<div style="color: #999; text-align: center;">No models trained yet. Train one first!</div>';
+                }
+            } catch (error) {
+                console.error('Error loading models:', error);
+                document.getElementById('rvcModelsList').innerHTML = '<div style="color: #c00;">Error loading models</div>';
+            }
+        }
+
+        async function rvcFullConversion() {
+            const audioFile = document.getElementById('rvcAudioFile').files[0];
+            const modelName = document.getElementById('rvcModelSelect').value;
+            const pitchShift = parseInt(document.getElementById('rvcPitchShift').value);
+            const vocalLevelDb = parseFloat(document.getElementById('rvcVocalLevel').value);
+
+            if (!audioFile) {
+                showRvcStatus('Please select an audio file', 'error');
+                return;
+            }
+
+            showRvcStatus('Starting voice conversion...', 'info');
+            document.getElementById('rvcProgressBar').classList.add('active');
+
+            try {
+                const formData = new FormData();
+                formData.append('audio_file', audioFile);
+                formData.append('model_name', modelName);
+                formData.append('pitch_shift', pitchShift);
+                formData.append('vocal_level_db', vocalLevelDb);
+
+                const response = await fetch('/pipeline/rvc/full-conversion', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    showRvcStatus('Error: ' + result.error, 'error');
+                    return;
+                }
+
+                showRvcStatus('Processing started! Converting to Yeat voice...', 'info');
+                document.getElementById('rvcProgressFill').style.width = '10%';
+                document.getElementById('rvcProgressFill').textContent = '10%';
+                
+                // Poll for completion
+                await pollRvcProcessing();
+
+            } catch (error) {
+                showRvcStatus('Error: ' + error.message, 'error');
+            }
+        }
+
+        async function pollRvcProcessing() {
+            const maxAttempts = 300; // 5 minutes max
+            let attempts = 0;
+
+            return new Promise((resolve) => {
+                const pollInterval = setInterval(async () => {
+                    attempts++;
+
+                    try {
+                        const response = await fetch('/pipeline/status');
+                        const status = await response.json();
+
+                        // Update progress
+                        const progressFill = document.getElementById('rvcProgressFill');
+                        progressFill.style.width = status.progress + '%';
+                        progressFill.textContent = status.progress + '%';
+
+                        if (status.status === 'completed') {
+                            clearInterval(pollInterval);
+                            showRvcStatus('✓ Voice conversion complete! Download your song below.', 'success');
+                            await updateStats();
+                            await loadGeneratedSongs();
+                            resolve();
+                        } else if (status.status === 'error') {
+                            clearInterval(pollInterval);
+                            showRvcStatus('Error: ' + status.error, 'error');
+                            resolve();
+                        }
+                    } catch (error) {
+                        console.error('Polling error:', error);
+                    }
+
+                    if (attempts >= maxAttempts) {
+                        clearInterval(pollInterval);
+                        showRvcStatus('Processing timeout', 'error');
+                        resolve();
+                    }
+                }, 1000);
+            });
+        }
+
+        function showRvcStatus(message, type) {
+            const statusDiv = document.getElementById('rvcStatus');
             statusDiv.textContent = message;
             statusDiv.className = 'status active ' + type;
         }
