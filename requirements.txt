@@ -1,104 +1,44 @@
-# Core Audio & ML Libraries
-audiocraft==1.3.0
-librosa==0.11.0
-scipy==1.13.1
-numpy==1.26.4
-soundfile==0.13.1
+# RVC Artist - Core Dependencies
+# Python 3.11, M1 Mac Optimized
+# Note: audiocraft excluded (requires xformers which cannot compile on M1)
+# Note: Use PyTorch native attention instead: torch.nn.functional.scaled_dot_product_attention()
 
-# PyTorch & Deep Learning
 torch==2.1.2
 torchaudio==2.1.2
-torchmetrics==1.4.1
 transformers==4.36.2
-safetensors==0.4.1
-tokenizers==0.15.1
-sentencepiece==0.2.1
-einops==0.7.0
-encodec==0.1.1
-julius==0.2.7
+librosa==0.11.0
+numpy==1.26.4
+scipy==1.13.1
+scikit-learn==1.3.2
 
-# Audio Processing
+# Audio Generation Components
+julius==0.2.7
+encodec==0.1.1
+pedalboard==0.9.12
 pydub==0.25.1
 audioread==3.1.0
-av==11.0.0
-pedalboard==0.9.12
 pyloudnorm==0.1.0
-soxr==0.4.0
 
-# NLP & Text
+# Language & NLP
 spacy==3.7.2
 lyricsgenius==3.7.5
 openai-whisper==20231117
-num2words==0.5.14
-Levenshtein==0.27.1
-python-Levenshtein==0.27.1
-RapidFuzz==3.6.2
-fuzzywuzzy==0.18.0
-
-# ML Tools & Utilities
-scikit-learn==1.3.2
-joblib==1.3.2
-numba==0.58.1
-llvmlite==0.41.1
-networkx==3.2.1
-dora_search==0.1.12
-submitit==1.5.1
-flashy==0.0.2
-hydra-core==1.3.2
-hydra-colorlog==1.2.0
-omegaconf==2.3.0
-pooch==1.8.0
-hf-xet==1.2.0
-huggingface-hub==0.20.1
-lightning-utilities==0.10.1
 
 # Web Framework
 Flask==3.0.0
 flask-cors==4.0.0
-Werkzeug==3.0.1
-Jinja2==3.1.2
-itsdangerous==2.1.2
-blinker==1.7.0
+
+# ML & Config
+omegaconf==2.3.0
+hydra-core==1.3.2
+safetensors==0.4.1
 
 # Utilities
 requests==2.31.0
 python-dotenv==1.0.0
-Cython==3.0.8
-decorator==5.1.1
-more-itertools==10.2.0
-colorlog==6.8.0
 tqdm==4.66.2
+pyyaml==6.0.3
 click==8.1.7
-msgpack==1.0.7
-cloudpickle==3.1.2
-filelock==3.13.1
-platformdirs==4.1.0
-docopt==0.6.2
-sympy==1.12
-mpmath==1.3.0
-packaging==23.2
-typing_extensions==4.9.0
-charset-normalizer==3.3.2
-idna==3.6
-urllib3==2.1.0
-certifi==2023.7.22
-cffi==1.16.0
-pycparser==2.21
-lazy_loader==0.3
-setuptools==69.1.1
-antlr4-python3-runtime==4.13.1
-regex==2023.12.25
-aiofiles==23.2.1
-beautifulsoup4==4.12.2
-soupsieve==2.5
-retrying==1.3.4
-yt-dlp==2024.12.13
-tiktoken==0.5.2
-threadpoolctl==3.2.0
-standard-aifc==3.13.0
-standard-chunk==3.13.0
-standard-sunau==3.13.0
-treetable==0.2.6
-audioop-lts==0.2.2
+
 MarkupSafe==2.1.3
 # Note: xformers requires build tools on M1 Mac - install with: pip install xformers (optional)
