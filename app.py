@@ -19,19 +19,21 @@ from pathlib import Path
 from typing import Optional, List
 import os
 
-# Suppress warnings
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-os.environ['CUDA_VISIBLE_DEVICES'] = ''
+# Suppress warnings (TensorFlow not used in this project, CUDA not available on M1 Mac)
+# os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # Only affects TensorFlow (not in use)
+# os.environ['CUDA_VISIBLE_DEVICES'] = ''   # No CUDA on Apple Silicon
 
 # Create necessary directories
+BASE_DIR = Path(__file__).parent
 DIRS = [
-    "./data", "./data/audio", "./data/audio/raw", "./data/audio/vocals",
-    "./data/audio/instrumentals", "./data/transcripts", "./data/lyrics",
-    "./data/aligned", "./data/features", "./models", "./models/checkpoints",
-    "./output", "./output/generated", "./logs"
+    BASE_DIR / "data", BASE_DIR / "data/audio", BASE_DIR / "data/audio/raw", 
+    BASE_DIR / "data/audio/vocals", BASE_DIR / "data/audio/instrumentals",
+    BASE_DIR / "data/transcripts", BASE_DIR / "data/lyrics", BASE_DIR / "data/aligned",
+    BASE_DIR / "data/features", BASE_DIR / "models", BASE_DIR / "models/checkpoints",
+    BASE_DIR / "output", BASE_DIR / "output/generated", BASE_DIR / "logs"
 ]
 for dir_path in DIRS:
-    os.makedirs(dir_path, exist_ok=True)
+    dir_path.mkdir(parents=True, exist_ok=True)
 
 from src.services.multi_stem_generator import MultiStemGenerator
 from src.services.style_analyzer import StyleAnalyzer
@@ -413,18 +415,9 @@ def main():
 
 
 if __name__ == "__main__":
+    # Run the CLI application
     sys.exit(main())
-    port = int(os.getenv("FLASK_PORT", 5030))
-    debug = os.getenv("FLASK_DEBUG", "True").lower() == "true"
     
-    print(f"""
-    ╔══════════════════════════════════════════════════════════════╗
-    ║                    RVC Artist Studio                          ║
-    ║              AI Music Generation Pipeline                     ║
-    ╠══════════════════════════════════════════════════════════════╣
-    ║  Server running at: http://{host}:{port}                       ║
-    ║  Debug mode: {debug}                                           ║
-    ╚══════════════════════════════════════════════════════════════╝
-    """)
-    
-    app.run(host=host, port=port, debug=debug)
+    # Note: Flask web server code was previously here but is unreachable
+    # after sys.exit(). To run a Flask server, create a separate src/app_web.py
+    # or import and initialize Flask properly in a different entry point.
