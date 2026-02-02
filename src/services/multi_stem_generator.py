@@ -197,18 +197,22 @@ class MasteringProcessor:
         limiter_threshold: float = -1.0
     ) -> np.ndarray:
         """Apply professional mastering."""
-        if audio.ndim == 1:
+        # Normalize amplitude first before any processing
+        max_val = np.abs(audio).max()
+        if max_val > 0 and max_val < 0.1:
+            audio = audio / max_val * 0.8  # Boost if too quiet
+        elif max_val > 1.5:
+            audio = audio / max_val * 0.95  # Reduce if too loud
+        
+        is_stereo = audio.ndim == 2 and audio.shape[0] == 2
+        if not is_stereo and audio.ndim == 1:
             audio = np.stack([audio, audio])
         
-        if stereo_width != 1.0:
+        if stereo_width != 1.0 and audio.ndim == 2 and audio.shape[0] == 2:
             audio = self._apply_stereo_width(audio, stereo_width)
         
         if PYLOUDNORM_AVAILABLE:
             audio = self._normalize_loudness(audio, target_lufs)
-        else:
-            max_val = np.abs(audio).max()
-            if max_val > 0:
-                audio = audio / max_val * 0.9
         
         audio = self._apply_limiter(audio, limiter_threshold)
         
@@ -742,14 +746,13 @@ class MultiStemGenerator:
             
             mixed += audio * level
         
+        # Always normalize mixed output to prevent clipping
+        max_val = np.abs(mixed).max()
+        if max_val > 1.0:
+            mixed = mixed / max_val * 0.95  # Soft clipping prevention
+        
         if apply_mastering and self.enable_mastering and self.mastering_processor:
             mixed = self.mastering_processor.master(mixed)
-        else:
-            max_val = np.abs(mixed).max()
-            if max_val > 1.0:
-                mixed = np.tanh(mixed / max_val) * 0.95
-            else:
-                mixed = mixed * 0.95
         
         return mixed
     
