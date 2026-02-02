@@ -705,10 +705,24 @@ class MultiStemGenerator:
         if mix_levels is None:
             mix_levels = default_levels
         
-        max_length = max(
-            audio.shape[-1] if audio.ndim > 1 else len(audio)
-            for audio in stems.values()
-        )
+        # Calculate max_length properly, handling (N,1) mono stems
+        max_length = 0
+        for audio in stems.values():
+            if audio.ndim == 1:
+                length = len(audio)
+            elif audio.ndim == 2:
+                # For (N, 1) or (1, N) mono stems, use the larger dimension
+                # For (2, N) stereo stems, use N
+                if audio.shape[0] == 1:
+                    length = audio.shape[1]
+                elif audio.shape[1] == 1:
+                    length = audio.shape[0]
+                else:
+                    # Stereo or other format
+                    length = max(audio.shape)
+            else:
+                length = audio.size
+            max_length = max(max_length, length)
         
         is_stereo = any(
             audio.ndim == 2 and audio.shape[0] == 2
@@ -722,6 +736,14 @@ class MultiStemGenerator:
         
         for stem_type, audio in stems.items():
             level = mix_levels.get(stem_type, 1.0)
+
+            if audio.ndim == 2:
+                if audio.shape[0] == 1 and audio.shape[1] > 1:
+                    audio = audio[0]
+                elif audio.shape[1] == 1 and audio.shape[0] > 1:
+                    audio = audio[:, 0]
+                elif audio.shape[0] != 2 and audio.shape[1] == 2:
+                    audio = audio.T
             
             if is_stereo and audio.ndim == 1:
                 audio = np.stack([audio, audio])
