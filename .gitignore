@@ -74,6 +74,10 @@ htmlcov/
 *.webm
 *.aac
 
+# Unignore generated WAVs in output/generated
+!/output/generated/*.wav
+!/output/generated/**/*.wav
+
 # Temporary files
 *.tmp
 *.log
