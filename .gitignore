@@ -34,7 +34,11 @@ wheels/
 # Data directories (generated content)
 /data/
 /models/
-/output/
+
+# Allow committing generated output for release / debugging when needed
+!/output/
+!/output/generated/
+!/output/generated/**
 /logs/
 
 # IDEs

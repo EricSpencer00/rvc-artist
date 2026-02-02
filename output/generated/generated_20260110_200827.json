@@ -1,0 +1,10 @@
+{
+  "prompt": "energetic hip hop beat",
+  "duration": 10,
+  "model": "small",
+  "temperature": 1.0,
+  "top_k": 250,
+  "top_p": 0.0,
+  "generated_at": "20260110_200827",
+  "style_profile_used": true
+}

@@ -1,0 +1,10 @@
+{
+  "prompt": "energetic trap beat in the style of YEAT, hard 808s, fast tempo",
+  "duration": 30,
+  "model": "small",
+  "temperature": 1.0,
+  "top_k": 250,
+  "top_p": 0.0,
+  "generated_at": "20260110_201629",
+  "style_profile_used": true
+}

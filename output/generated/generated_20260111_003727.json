@@ -1,0 +1,10 @@
+{
+  "prompt": "in the style of Yeat, aggressive trap beat, heavy distorted 808, synthetic bells, rage trap, saturated texture, studio quality, professional mix, crisp percussion, high fidelity, fast aggressive tempo, 146 BPM, loud punchy mix, big dynamic drops, in D# minor, fast, high energy, balanced sound, themes of bitch, time, fuck, money",
+  "duration": 5,
+  "model": "large",
+  "temperature": 1.0,
+  "top_k": 250,
+  "top_p": 0.0,
+  "generated_at": "20260111_003727",
+  "style_profile_used": true
+}

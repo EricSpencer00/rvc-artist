@@ -1,0 +1,18 @@
+{
+  "prompt": "yeat song",
+  "duration": 30,
+  "model_size": "large",
+  "stems_generated": [
+    "drums",
+    "bass",
+    "melody_1"
+  ],
+  "temperature": 1.0,
+  "top_k": 250,
+  "guidance_scale": 3.5,
+  "generated_at": "20260127_124815",
+  "style_profile_used": false,
+  "artist_name": null,
+  "processing_enabled": true,
+  "mastering_enabled": true
+}

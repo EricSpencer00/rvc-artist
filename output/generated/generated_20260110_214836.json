@@ -1,0 +1,10 @@
+{
+  "prompt": "in the style of Yeat, aggressive trap beat, heavy distorted 808, synthetic bells, rage trap, fast, high energy, balanced sound, 146 BPM, in D# minor, high energy, themes of bitch, time, fuck, money, shit",
+  "duration": 10,
+  "model": "small",
+  "temperature": 1.0,
+  "top_k": 250,
+  "top_p": 0.0,
+  "generated_at": "20260110_214836",
+  "style_profile_used": true
+}
