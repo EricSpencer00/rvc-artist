@@ -51,6 +51,13 @@ except ImportError:
     VOCAL_GENERATOR_AVAILABLE = False
     print("VocalGenerator not available - vocals will be instrumental only")
 
+try:
+    from .yeat_voice_converter import get_yeat_converter
+    YEAT_CONVERTER_AVAILABLE = True
+except ImportError:
+    YEAT_CONVERTER_AVAILABLE = False
+    print("Yeat voice converter not available - vocals will not be converted to Yeat style")
+
 
 class StemProcessor:
     """Applies professional audio processing to stems."""
@@ -414,6 +421,7 @@ class MultiStemGenerator:
         self._load_models()
         self._init_vocal_generator()
         self._init_processors()
+        self._init_yeat_converter()
         
         if rvc_model_path:
             self._load_rvc_model(rvc_model_path)
@@ -473,18 +481,36 @@ class MultiStemGenerator:
         if self.enable_mastering:
             print("✅ Mastering processor initialized")
     
+    def _init_yeat_converter(self):
+        """Initialize Yeat voice converter for vocal transformation."""
+        if not YEAT_CONVERTER_AVAILABLE:
+            print("⚠️  Yeat voice converter not available")
+            self.yeat_converter = None
+            return
+        
+        try:
+            self.yeat_converter = get_yeat_converter("models/rvc/yeat_model")
+            if self.yeat_converter.loaded:
+                print("✅ Yeat voice converter initialized")
+            else:
+                print("⚠️  Yeat voice converter model not found - vocals will not be converted")
+                self.yeat_converter = None
+        except Exception as e:
+            print(f"⚠️  Failed to initialize Yeat converter: {e}")
+            self.yeat_converter = None
+    
     def _load_rvc_model(self, model_path: str):
-        """Load RVC model for voice conversion."""
+        """Load RVC model for voice conversion (legacy)."""
         model_path = Path(model_path)
         if not model_path.exists():
             print(f"RVC model not found: {model_path}")
             return
         
-        print(f"⚠️ RVC loading placeholder - implement with actual RVC library")
+        # Now delegated to Yeat converter
         self.rvc_model = {
             'path': str(model_path),
-            'loaded': False,
-            'message': 'Install RVC library to enable voice conversion'
+            'loaded': True,
+            'using_yeat_converter': True
         }
     
     def apply_rvc_conversion(
@@ -493,10 +519,20 @@ class MultiStemGenerator:
         sample_rate: int = 32000,
         pitch_shift: int = 0
     ) -> np.ndarray:
-        """Apply RVC voice conversion."""
-        if self.rvc_model is None or not self.rvc_model.get('loaded', False):
+        """Apply RVC voice conversion using Yeat converter."""
+        if not hasattr(self, 'yeat_converter') or self.yeat_converter is None:
             return audio
-        return audio
+        
+        try:
+            converted = self.yeat_converter.convert(
+                audio, 
+                sample_rate=sample_rate,
+                pitch_shift=pitch_shift
+            )
+            return converted
+        except Exception as e:
+            print(f"⚠️  Voice conversion failed: {e}, returning original audio")
+            return audio
     
     def _build_stem_prompt(
         self,
